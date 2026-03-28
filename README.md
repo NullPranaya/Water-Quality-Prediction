@@ -74,28 +74,3 @@ The notebooks are independent cleaners for each data source. You can run them in
 5. `src/cleaning/tabular/agricultural/usdaNass-agriculture-clean.ipynb` - cleans agricultural data
 
 ---
-
-## Project structure
-
-```
-Water-Quality-Prediction/
-  data/
-    tabular/
-      agricultural/
-      climate/
-      water-quality/
-  src/
-    cleaning/
-      tabular/
-        agricultural/
-        climate/
-        water-quality/
-  requirements.txt
-  README.md
-```
-
----
-
-## Current status
-
-The project is in the data cleaning phase. No model has been built yet. The goal is to get all datasets cleaned and merged before modeling begins.
