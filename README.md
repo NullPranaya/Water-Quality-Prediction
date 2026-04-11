@@ -69,7 +69,7 @@ The notebooks are independent cleaners for each data source. You can run them in
 
 1. `src/cleaning/tabular/water-quality/epa-stations-clean.ipynb` - cleans EPA station location data
 2. `src/cleaning/tabular/water-quality/epa-wq-clean.ipynb` - cleans EPA water quality measurements
-3. `src/cleaning/tabular/water-quality/epa-merge-station-and-wq.ipynb` - merges the two EPA datasets
+3. `src/cleaning/tabular/water-quality/epa-merge-station&wq.ipynb` - merges the two EPA datasets
 4. `src/cleaning/tabular/climate/climate-clean.ipynb` - cleans climate data
 5. `src/cleaning/tabular/agricultural/usdaNass-agriculture-clean.ipynb` - cleans agricultural data
 
