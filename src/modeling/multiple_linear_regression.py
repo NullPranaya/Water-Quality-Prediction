@@ -94,6 +94,7 @@ def select_targets(
     min_samples: int,
     top_n: int,
 ) -> list[str]:
+    print("Available columns:", df.columns.tolist())
     complete_rows = df.dropna(subset=PREDICTOR_COLUMNS + ["ResultMeasureValue"])
     counts = complete_rows["CharacteristicName"].value_counts()
 
