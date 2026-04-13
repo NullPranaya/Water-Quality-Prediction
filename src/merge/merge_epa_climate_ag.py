@@ -10,7 +10,6 @@ def merge_epa_climate_agriculture():
     epa_climate_df['day_dt'] = pd.to_datetime(epa_climate_df['day'])
     epa_climate_df['year'] = epa_climate_df['day_dt'].dt.year
     epa_climate_df['state'] = 'IOWA' 
-    
     # Pivot ag data - keep year, period, state as index
     ag_df['data_item_short'] = ag_df['data_item'].str.replace(', MEASURED IN .*', '', regex=True)
     ag_pivot = ag_df.pivot_table(

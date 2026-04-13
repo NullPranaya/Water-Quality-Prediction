@@ -74,3 +74,22 @@ The notebooks are independent cleaners for each data source. You can run them in
 5. `src/cleaning/tabular/agricultural/usdaNass-agriculture-clean.ipynb` - cleans agricultural data
 
 ---
+
+## Multiple Linear Regression
+
+To train multiple linear regression models for several water quality target variables, run:
+
+```bash
+python3 src/modeling/multiple_linear_regression.py
+```
+
+This script uses climate and location variables as predictors and trains one model per water quality parameter from `CharacteristicName`. By default, it fits the 5 most common targets with at least 100 complete rows and saves:
+
+- `data/tabular/modeling/multiple_linear_regression_metrics.csv`
+- `data/tabular/modeling/multiple_linear_regression_coefficients.csv`
+
+You can also specify target variables manually:
+
+```bash
+python3 src/modeling/multiple_linear_regression.py --targets "pH" "Dissolved oxygen (DO)" "Nitrate"
+```

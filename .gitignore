@@ -1,5 +1,3 @@
 # Virtual environment
 venv/
-
-# All csv files
-*.csv
+data/tabular/merged/*.csv
