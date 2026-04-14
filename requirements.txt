@@ -27,3 +27,6 @@ ipython==9.10.1
 pygments==2.20.0
 ipykernel==6.25.2
 jupyterlab==3.2.4
+scikit_learn==1.8.0
+joblib==1.5.3
+threadpoolctl==3.6.0
