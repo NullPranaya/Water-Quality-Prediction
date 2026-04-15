@@ -101,6 +101,11 @@ TARGET_COLORSCALES = {
     "Nitrate":           "YlOrRd",
 }
 
+MODEL_DESCRIPTIONS = {
+    "Linear Regression": "Fast baseline model with simpler, more linear behavior.",
+    "Random Forest": "Ensemble model that captures more complex, non-linear patterns across stations.",
+}
+
 
 # ─────────────────────────────────────────────────────────────
 # MODEL LOADING
@@ -373,8 +378,11 @@ def _available_model_types(target) -> list:
     options = []
     for mt in MODEL_PREFIXES:
         available = bool(target and MODELS.get(target, {}).get(mt))
+        label = mt
+        if mt == "Random Forest":
+            label = "Random Forest (recommended for richer patterns)"
         options.append({
-            "label": mt if (not target or available) else f"{mt} (unavailable)",
+            "label": label if (not target or available) else f"{mt} (unavailable)",
             "value": mt,
             "disabled": (target is not None and not available),
         })
@@ -506,6 +514,19 @@ app.layout = html.Div(
                                     inputStyle={
                                         "accentColor": ACCENT,
                                         "width": "16px", "height": "16px",
+                                    },
+                                ),
+                                html.Div(
+                                    id="model-helper",
+                                    style={
+                                        "marginTop": "8px",
+                                        "padding": "10px 12px",
+                                        "background": ACCENT_LIGHT,
+                                        "border": f"1px solid {BORDER}",
+                                        "borderRadius": "8px",
+                                        "fontSize": "13px",
+                                        "lineHeight": "1.5",
+                                        "color": TEXT_MID,
                                     },
                                 ),
                             ]),
@@ -675,6 +696,36 @@ def update_model_options(target, current_model):
     return options, new_value
 
 
+@app.callback(
+    Output("model-helper", "children"),
+    Input("model-radio", "value"),
+)
+def update_model_helper(model_type):
+    if not model_type:
+        return "Choose a model to see what kind of prediction behavior it emphasizes."
+
+    badge_text = "Best for detail" if model_type == "Random Forest" else "Best for interpretability"
+    badge_color = ACCENT if model_type == "Random Forest" else "#6c757d"
+    return [
+        html.Div(
+            badge_text,
+            style={
+                "display": "inline-block",
+                "marginBottom": "6px",
+                "padding": "3px 8px",
+                "borderRadius": "999px",
+                "background": badge_color,
+                "color": "white",
+                "fontSize": "11px",
+                "fontWeight": "700",
+                "letterSpacing": "0.03em",
+                "textTransform": "uppercase",
+            },
+        ),
+        html.Div(MODEL_DESCRIPTIONS.get(model_type, "")),
+    ]
+
+
 # ─────────────────────────────────────────────────────────────
 # CALLBACK: Run prediction & update map
 # ─────────────────────────────────────────────────────────────
@@ -803,7 +854,11 @@ def run_prediction(n_clicks, target, model_type, selected_date):
 
     # ── Status banner ─────────────────────────────────
     status = html.Div(
-        f"✅  {model_type}  ·  {target}  ·  {pred_date.strftime('%b %d, %Y')}",
+        (
+            f"✅  {model_type}"
+            f"{'  ·  richer pattern mode' if model_type == 'Random Forest' else ''}"
+            f"  ·  {target}  ·  {pred_date.strftime('%b %d, %Y')}"
+        ),
         style={
             "background": "#f0faf3",
             "border": f"1px solid {SUCCESS}",
@@ -819,6 +874,8 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         f"{target} ({unit})  ·  {model_type}  ·  "
         f"Predicted for {pred_date.strftime('%B %d, %Y')}"
     )
+    if model_type == "Random Forest":
+        title += "  ·  enhanced pattern view"
 
     # ── Summary stats ─────────────────────────────────
     preds = station_df["predicted"]

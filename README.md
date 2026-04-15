@@ -2,6 +2,8 @@
 
 An end-to-end machine learning project for predicting water quality conditions across Iowa EPA monitoring stations. The project combines real water quality measurements, climate records, and agricultural data into a unified modeling pipeline, then serves predictions through an interactive Dash dashboard with map-based visualization.
 
+This repository is maintained as a completed project snapshot, with pre-trained artifacts and processed datasets included for reproducibility.
+
 ---
 
 ## Table of Contents
