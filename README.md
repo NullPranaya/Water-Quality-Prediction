@@ -1,127 +1,320 @@
 # Water Quality Prediction
 
-An end-to-end machine learning project for predicting water quality conditions across Iowa monitoring stations. The repository includes data cleaning and merging pipelines, trained regression models, and a Dash dashboard for interactive prediction and visualization.
+An end-to-end machine learning project for predicting water quality conditions across Iowa EPA monitoring stations. The project combines real water quality measurements, climate records, and agricultural data into a unified modeling pipeline, then serves predictions through an interactive Dash dashboard with map-based visualization.
+
+---
+
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Data Sources](#data-sources)
+- [Repository Structure](#repository-structure)
+- [Setup and Installation](#setup-and-installation)
+- [How to Run the App](#how-to-run-the-app)
+- [Dashboard Features](#dashboard-features)
+- [Data Pipeline](#data-pipeline)
+- [Models](#models)
+- [How to Retrain the Models](#how-to-retrain-the-models)
+- [Additional Modeling Outputs](#additional-modeling-outputs)
+- [Tech Stack](#tech-stack)
+
+---
 
 ## Project Overview
 
-This project combines EPA water quality records with climate data to estimate water conditions at monitoring stations across Iowa. The final application loads pre-trained models and generates station-level predictions for:
+This project answers a practical question: given climate conditions on any date, what water quality can we expect at monitoring stations across Iowa?
 
-- Water temperature
-- pH
-- Dissolved oxygen
-- Nitrate
+The pipeline pulls together three real-world datasets — EPA water quality measurements, ISU climate station records, and USDA agricultural data — cleans and merges them, and trains scikit-learn regression models for four water quality targets:
 
-Predictions are displayed in an interactive Dash app with map-based visualization and spatial interpolation across the monitoring network.
+| Target Variable | Unit |
+|---|---|
+| Water Temperature | °C |
+| pH | pH |
+| Dissolved Oxygen | mg/L |
+| Nitrate | mg/L |
 
-## What the Project Includes
+Predictions are served through a locally-runnable Dash app. The user picks a target, a model type, and a date — the app runs inference across all monitoring stations and renders a spatially interpolated map of predicted values across Iowa.
 
-- Cleaned EPA, climate, and agricultural datasets
-- Merge scripts and notebooks for building the modeling dataset
-- Trained scikit-learn regression models saved as `.pkl` files
-- A Dash dashboard for local prediction and exploration
-- Modeling outputs for linear regression metrics and coefficients
+Pre-trained model files are included in the repository so the dashboard works immediately without retraining.
+
+---
+
+## Data Sources
+
+| Dataset | Source | Raw File |
+|---|---|---|
+| EPA Water Quality Measurements | U.S. Environmental Protection Agency (WQX) | `data/tabular/water-quality/raw/epa-wq.csv` |
+| EPA Monitoring Station Locations | U.S. Environmental Protection Agency | `data/tabular/water-quality/raw/epa-stations.csv` |
+| Iowa DNR Water Quality | Iowa Department of Natural Resources | `data/tabular/water-quality/raw/IowaDNR-wq.csv` |
+| Climate Records | Iowa State University Climate Science | `data/tabular/climate/raw/isu-climate.csv` |
+| Agricultural Data | USDA National Agricultural Statistics Service | `data/tabular/agricultural/raw/usdaNass-agriculture.csv` |
+
+Each EPA monitoring station is spatially matched to its nearest ISU climate station, and the climate features for that station are joined to each water quality observation by date.
+
+---
 
 ## Repository Structure
 
-```text
+```
 .
-├── app.py
-├── requirements.txt
+├── app.py                          # Dash dashboard (main entry point)
+├── requirements.txt                # Python dependencies
+│
 ├── data/
 │   ├── tabular/
-│   │   ├── agricultural/
+│   │   ├── water-quality/
+│   │   │   ├── raw/                # Original EPA and DNR downloads
+│   │   │   └── clean/              # Cleaned and merged EPA tables
 │   │   ├── climate/
-│   │   ├── merged/
-│   │   ├── modeling/
-│   │   └── water-quality/
+│   │   │   ├── raw/                # Original ISU climate download
+│   │   │   └── clean/              # Cleaned climate table
+│   │   ├── agricultural/
+│   │   │   ├── raw/                # Original USDA NASS download
+│   │   │   └── clean/              # Cleaned agricultural table
+│   │   ├── merged/                 # Final joined tables used for modeling
+│   │   │   ├── epa-climate-merged.csv        # Main modeling dataset
+│   │   │   ├── epa-merged.csv                # EPA stations + measurements joined
+│   │   │   └── epa-to-climate-station-map.csv # Nearest-station spatial map
+│   │   └── modeling/               # Model evaluation outputs
+│   │       ├── multiple_linear_regression_metrics.csv
+│   │       └── multiple_linear_regression_coefficients.csv
 │   ├── images/
+│   │   └── water-images/           # Water quality image samples (clean/dirty)
 │   └── text/
+│       └── raw/                    # City-level water summary text files
+│
 └── src/
     ├── cleaning/
+    │   └── tabular/
+    │       ├── water-quality/      # Notebooks: epa-wq-clean, epa-stations-clean
+    │       ├── climate/            # Notebook: climate-clean
+    │       └── agricultural/      # Notebook: usdaNass-agriculture-clean
     ├── merge/
+    │   ├── merge_epa_climate.py              # Script: join EPA + climate by date/station
+    │   ├── merge_epa_climate_ag.py           # Script: add agricultural features
+    │   └── *.ipynb                           # Exploratory merge notebooks
     └── modeling/
+        ├── train_sklearn_models.py           # Train and save all .pkl models
+        ├── multiple_linear_regression.py     # Standalone MLR script (numpy only)
+        ├── lr_water_temperature.pkl          # Pre-trained Linear Regression
+        ├── rf_water_temperature.pkl          # Pre-trained Random Forest
+        ├── lr_ph.pkl
+        ├── rf_ph.pkl
+        ├── lr_dissolved_oxygen.pkl
+        ├── rf_dissolved_oxygen.pkl
+        ├── lr_nitrate.pkl
+        └── rf_nitrate.pkl
 ```
 
-## Dashboard Features
+---
 
-- Select a target variable to predict
-- Compare linear regression and random forest models
-- Choose a prediction date
-- View predictions across Iowa monitoring stations
-- See interpolated map surfaces based on station predictions
-- Run the app locally with pre-trained models already included in the repo
+## Setup and Installation
 
-## Models
+**Requirements:** Python 3.9 or higher.
 
-The dashboard uses pre-trained scikit-learn pipelines stored in [`src/modeling`](/Users/pranayasigdel/pi515/Water-Quality-Prediction/src/modeling). The current saved models include:
+### 1. Clone the repository
 
-- `lr_water_temperature.pkl`
-- `rf_water_temperature.pkl`
-- `lr_ph.pkl`
-- `rf_ph.pkl`
-- `lr_dissolved_oxygen.pkl`
-- `rf_dissolved_oxygen.pkl`
-- `lr_nitrate.pkl`
-- `rf_nitrate.pkl`
+```bash
+git clone https://github.com/psXp00/Water-Quality-Prediction.git
+cd Water-Quality-Prediction
+```
 
-These models are trained on climate-related features such as day-of-year, temperature, precipitation, snow, and distance to climate stations.
+### 2. Create a virtual environment
 
-## Data Pipeline
-
-The project workflow is organized in three main stages:
-
-1. Clean raw EPA, climate, and agricultural datasets in [`src/cleaning`](/Users/pranayasigdel/pi515/Water-Quality-Prediction/src/cleaning).
-2. Merge cleaned datasets into modeling tables using scripts in [`src/merge`](/Users/pranayasigdel/pi515/Water-Quality-Prediction/src/merge).
-3. Train and save models from the merged dataset using [`src/modeling/train_sklearn_models.py`](/Users/pranayasigdel/pi515/Water-Quality-Prediction/src/modeling/train_sklearn_models.py).
-
-The main runtime dataset used by the dashboard is:
-
-- [`data/tabular/merged/epa-climate-merged.csv`](/Users/pranayasigdel/pi515/Water-Quality-Prediction/data/tabular/merged/epa-climate-merged.csv)
-
-## How to Run the App
-
-From the project root:
-
+**macOS / Linux:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+```
+
+**Windows:**
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+### 3. Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
+
+This installs everything needed: Dash, Plotly, pandas, NumPy, SciPy, scikit-learn, and the full Jupyter environment.
+
+---
+
+## How to Run the App
+
+With your virtual environment activated and dependencies installed, run from the project root:
+
+```bash
 python app.py
 ```
 
-Then open:
+Then open your browser and go to:
 
-```text
+```
 http://127.0.0.1:8050
 ```
 
+The app loads all eight pre-trained `.pkl` models from `src/modeling/` at startup — no retraining needed. A green status badge in the sidebar confirms how many models loaded successfully.
+
+---
+
+## Dashboard Features
+
+The dashboard is organized into a left control panel and a right map panel.
+
+**Left Panel — Controls:**
+- **Target Variable** — choose one of four water quality parameters to predict (Water Temperature, pH, Dissolved Oxygen, Nitrate)
+- **Prediction Model** — switch between Linear Regression and Random Forest
+- **Prediction Date** — pick any date using the date picker, or use the quick-select buttons (Today, In 1 week, In 2 weeks, In 1 month, In 6 months, In 1 year)
+- **Run Prediction** — triggers inference across all monitoring stations
+
+**Right Panel — Map:**
+- Displays all Iowa EPA monitoring stations on a scoped U.S. map
+- After running a prediction, shows a color-coded interpolated surface across the station network using cubic spline spatial interpolation
+- Station markers are overlaid on top of the interpolated grid with per-station predicted values visible on hover
+- Prediction summary panel shows Min, Max, Mean, and Std Dev for the current prediction
+
+**Color scales by target:**
+- Water Temperature — Red-Yellow-Blue (diverging)
+- pH — Red-Yellow-Green
+- Dissolved Oxygen — Blues
+- Nitrate — Yellow-Orange-Red
+
+---
+
+## Data Pipeline
+
+The project follows a three-stage pipeline. Pre-processed outputs are already committed to the repository so you can skip to running the app, but the full pipeline can be re-run from scratch.
+
+### Stage 1 — Cleaning
+
+Each raw dataset is cleaned in a Jupyter notebook under `src/cleaning/`:
+
+| Notebook | What it does |
+|---|---|
+| `water-quality/epa-wq-clean.ipynb` | Filters EPA water quality records, pivots from long to wide format (one row per station-date, one column per parameter), standardizes units |
+| `water-quality/epa-stations-clean.ipynb` | Cleans station metadata, extracts lat/lon, deduplicates |
+| `climate/climate-clean.ipynb` | Parses ISU climate records, standardizes date format, handles missing values |
+| `agricultural/usdaNass-agriculture-clean.ipynb` | Cleans USDA NASS agricultural features |
+
+### Stage 2 — Merging
+
+Cleaned tables are joined in `src/merge/`:
+
+1. **EPA stations + measurements** — inner join on `MonitoringLocationIdentifier` to produce `epa-merged.csv`
+2. **Spatial matching** — each EPA station is matched to its nearest ISU climate station by haversine distance, producing `epa-to-climate-station-map.csv`
+3. **EPA + Climate join** — `merge_epa_climate.py` joins `epa-merged.csv` with `isu-climate-clean.csv` on `(climate_station, date)`, yielding the main modeling table `epa-climate-merged.csv`
+4. **Add agricultural features** — `merge_epa_climate_ag.py` optionally extends the merged table with USDA NASS data
+
+The final modeling dataset `data/tabular/merged/epa-climate-merged.csv` contains one row per station-date observation with all water quality targets and climate features side by side.
+
+### Stage 3 — Modeling
+
+`src/modeling/train_sklearn_models.py` trains two model types (Linear Regression, Random Forest) for each of the four targets and saves them as `.pkl` files:
+
+```
+lr_water_temperature.pkl    rf_water_temperature.pkl
+lr_ph.pkl                   rf_ph.pkl
+lr_dissolved_oxygen.pkl     rf_dissolved_oxygen.pkl
+lr_nitrate.pkl              rf_nitrate.pkl
+```
+
+---
+
+## Models
+
+### Features
+
+Both model types are trained on the same ten climate-derived features:
+
+| Feature | Description |
+|---|---|
+| `doy` | Day of year (1–366) — primary seasonal signal |
+| `gdd_40_86` | Growing degree days (base 40°F, max 86°F) |
+| `high` | Daily high temperature (°F) |
+| `highc` | Daily high temperature (°C) |
+| `low` | Daily low temperature (°F) |
+| `lowc` | Daily low temperature (°C) |
+| `precip` | Daily precipitation (inches) |
+| `snow` | Daily snowfall (inches) |
+| `snowd` | Snow depth on ground (inches) |
+| `distance_to_climate_station_km` | Distance from EPA station to nearest climate station |
+
+### Model Architecture
+
+Each model is a scikit-learn `Pipeline` with two steps:
+
+1. `StandardScaler` — normalizes features to zero mean, unit variance
+2. Model — `LinearRegression` or `RandomForestRegressor(n_estimators=200, max_depth=12, min_samples_leaf=5)`
+
+An 80/20 train/test split with `random_state=42` is used for all targets.
+
+### Linear Regression (numpy implementation)
+
+`src/modeling/multiple_linear_regression.py` also includes a from-scratch multiple linear regression implementation using `numpy.linalg.lstsq` (no scikit-learn). This was used to generate the evaluation CSVs in `data/tabular/modeling/`. It supports command-line arguments for data path, output directory, target selection, and minimum sample thresholds.
+
+---
+
 ## How to Retrain the Models
 
-If you want to regenerate the saved scikit-learn models:
+If you want to regenerate the `.pkl` files from the merged dataset:
 
 ```bash
-source venv/bin/activate
+# Activate your virtual environment first
+# macOS / Linux:  source venv/bin/activate
+# Windows:        venv\Scripts\activate
+
 python src/modeling/train_sklearn_models.py
 ```
 
-This rewrites the `.pkl` model artifacts in `src/modeling/`.
+This will print training progress and evaluation metrics (R², RMSE, MAE) for each target and model type, then overwrite the `.pkl` files in `src/modeling/`.
+
+To also regenerate the CSV modeling outputs using the numpy-based linear regression:
+
+```bash
+python src/modeling/multiple_linear_regression.py
+```
+
+Optional arguments:
+```
+--data-path PATH       Path to the merged CSV (default: data/tabular/merged/epa-climate-merged.csv)
+--output-dir DIR       Output directory for metrics/coefficients CSVs
+--targets NAME [...]   Specific target CharacteristicName values to model
+--top-n N              Number of most frequent targets to model (default: 5)
+--min-samples N        Minimum rows required to train a target (default: 100)
+--test-size FLOAT      Fraction held out for testing (default: 0.2)
+--seed INT             Random seed (default: 42)
+```
+
+---
 
 ## Additional Modeling Outputs
 
-The repository also includes multiple linear regression summary outputs:
+The repository includes pre-generated evaluation outputs from the numpy linear regression:
 
-- [`data/tabular/modeling/multiple_linear_regression_metrics.csv`](/Users/pranayasigdel/pi515/Water-Quality-Prediction/data/tabular/modeling/multiple_linear_regression_metrics.csv)
-- [`data/tabular/modeling/multiple_linear_regression_coefficients.csv`](/Users/pranayasigdel/pi515/Water-Quality-Prediction/data/tabular/modeling/multiple_linear_regression_coefficients.csv)
+- [`data/tabular/modeling/multiple_linear_regression_metrics.csv`](data/tabular/modeling/multiple_linear_regression_metrics.csv) — R², RMSE, MAE, sample counts per target
+- [`data/tabular/modeling/multiple_linear_regression_coefficients.csv`](data/tabular/modeling/multiple_linear_regression_coefficients.csv) — intercept and feature coefficients per target
+
+---
 
 ## Tech Stack
 
-- Python
-- Dash and Plotly
-- pandas and NumPy
-- SciPy
-- scikit-learn
-- Jupyter notebooks
+| Category | Libraries |
+|---|---|
+| Dashboard | Dash 4.x, Plotly 6.x |
+| Data processing | pandas, NumPy |
+| Machine learning | scikit-learn (Linear Regression, Random Forest, Pipeline, StandardScaler) |
+| Spatial interpolation | SciPy (`griddata` — cubic spline) |
+| Geospatial | GeoPandas, Shapely, pyproj, Folium |
+| Notebooks | JupyterLab, IPython |
+| Visualization | Matplotlib, Seaborn |
+| Language | Python 3.9+ |
+
+---
 
 ## Status
 
-The project is fully functional in its current form: data is cleaned and merged, trained models are saved in the repository, and the dashboard can be launched locally for interactive prediction and visualization.
+The project is fully functional. Data is cleaned and merged, all eight trained models are saved in the repository, and the dashboard can be launched locally with a single command for interactive prediction and visualization across Iowa's water monitoring network.
