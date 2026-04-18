@@ -1,18 +1,23 @@
 """
 train_sklearn_models.py
 =======================
-Train scikit-learn Linear Regression and Random Forest Regression pipelines
+Train scikit-learn Linear Regression, Random Forest, and Gradient Boosting
+regression pipelines
 for four water quality targets and save each as a .pkl file.
 
 Output files (written to the same directory as this script):
     lr_water_temperature.pkl
     rf_water_temperature.pkl
+    gb_water_temperature.pkl
     lr_ph.pkl
     rf_ph.pkl
+    gb_ph.pkl
     lr_dissolved_oxygen.pkl
     rf_dissolved_oxygen.pkl
+    gb_dissolved_oxygen.pkl
     lr_nitrate.pkl
     rf_nitrate.pkl
+    gb_nitrate.pkl
 
 Each .pkl is a fitted sklearn Pipeline whose feature order matches the
 FEATURE_COLS list used by app.py at inference time.
@@ -24,16 +29,24 @@ Usage:
 from __future__ import annotations
 
 import pickle
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import FunctionTransformer, StandardScaler
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from model_feature_engineering import add_derived_features
 
 # ─────────────────────────────────────────────────────────────
 # PATHS  (relative to repo root — run from repo root)
@@ -82,29 +95,6 @@ TARGETS = {
     },
 }
 
-MODELS = {
-    "Linear Regression": (
-        "lr",
-        Pipeline([
-            ("scaler", StandardScaler()),
-            ("model",  LinearRegression()),
-        ]),
-    ),
-    "Random Forest": (
-        "rf",
-        Pipeline([
-            ("scaler", StandardScaler()),
-            ("model",  RandomForestRegressor(
-                n_estimators=200,
-                max_depth=12,
-                min_samples_leaf=5,
-                random_state=42,
-                n_jobs=-1,
-            )),
-        ]),
-    ),
-}
-
 RANDOM_STATE = 42
 TEST_SIZE    = 0.2
 MIN_SAMPLES  = 50   # skip targets with fewer clean rows than this
@@ -116,13 +106,58 @@ def symmetric_mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(safe) * 100.0)
 
 
+MODELS = {
+    "Linear Regression": (
+        "lr",
+        Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("feature_engineering", FunctionTransformer(add_derived_features, validate=False)),
+            ("scaler", StandardScaler()),
+            ("model", LinearRegression()),
+        ]),
+    ),
+    "Random Forest": (
+        "rf",
+        Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("feature_engineering", FunctionTransformer(add_derived_features, validate=False)),
+            ("model", RandomForestRegressor(
+                n_estimators=600,
+                max_depth=None,
+                min_samples_split=4,
+                min_samples_leaf=2,
+                max_features="sqrt",
+                random_state=RANDOM_STATE,
+                n_jobs=-1,
+            )),
+        ]),
+    ),
+    "Gradient Boosting": (
+        "gb",
+        Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("feature_engineering", FunctionTransformer(add_derived_features, validate=False)),
+            ("model", HistGradientBoostingRegressor(
+                loss="squared_error",
+                learning_rate=0.05,
+                max_depth=8,
+                max_iter=400,
+                min_samples_leaf=10,
+                l2_regularization=0.1,
+                random_state=RANDOM_STATE,
+            )),
+        ]),
+    ),
+}
+
+
 def load_and_prepare(
     target_col: str,
     valid_range: tuple[float, float],
 ) -> tuple[np.ndarray, np.ndarray, int, int] | None:
     """
-    Load the CSV, drop rows missing the target or any feature, impute remaining
-    NaNs with column medians, and return (X, y) arrays.
+    Load the CSV, drop rows missing the target, filter obvious target outliers,
+    and return the raw feature matrix for pipeline-level imputation.
     """
     df = pd.read_csv(DATA_PATH)
 
@@ -136,11 +171,6 @@ def load_and_prepare(
 
     if len(df) < MIN_SAMPLES:
         return None
-
-    # Impute feature NaNs with column medians (mirrors app.py inference logic)
-    for col in FEATURE_COLS:
-        if df[col].isna().any():
-            df[col] = df[col].fillna(df[col].median())
 
     X = df[FEATURE_COLS].to_numpy(dtype=float)
     y = df[target_col].to_numpy(dtype=float)

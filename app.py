@@ -9,12 +9,16 @@ Expected files on the server (set paths in CONFIGURATION below):
   MODEL_DIR               – folder containing one .pkl per model/target:
                               lr_water_temperature.pkl
                               rf_water_temperature.pkl
+                              gb_water_temperature.pkl
                               lr_ph.pkl
                               rf_ph.pkl
+                              gb_ph.pkl
                               lr_dissolved_oxygen.pkl
                               rf_dissolved_oxygen.pkl
+                              gb_dissolved_oxygen.pkl
                               lr_nitrate.pkl
                               rf_nitrate.pkl
+                              gb_nitrate.pkl
 
 Each .pkl must be a scikit-learn Pipeline (or any object with .predict())
 whose feature order matches FEATURE_COLS exactly.
@@ -75,8 +79,9 @@ TARGET_COLS = {
 
 # Model type display name → filename prefix
 MODEL_PREFIXES = {
+    "Gradient Boosting": "gb",
+    "Random Forest": "rf",
     "Linear Regression": "lr",
-    "Random Forest":     "rf",
 }
 
 # Target display name → safe filename stem (used to build .pkl paths)
@@ -102,8 +107,9 @@ TARGET_COLORSCALES = {
 }
 
 MODEL_DESCRIPTIONS = {
+    "Gradient Boosting": "Highest-accuracy tree ensemble with stronger seasonal and nonlinear pattern capture.",
+    "Random Forest": "Robust ensemble model with richer nonlinear behavior and stable predictions across stations.",
     "Linear Regression": "Fast baseline model with simpler, more linear behavior.",
-    "Random Forest": "Ensemble model that captures more complex, non-linear patterns across stations.",
 }
 
 
@@ -379,8 +385,10 @@ def _available_model_types(target) -> list:
     for mt in MODEL_PREFIXES:
         available = bool(target and MODELS.get(target, {}).get(mt))
         label = mt
-        if mt == "Random Forest":
-            label = "Random Forest (recommended for richer patterns)"
+        if mt == "Gradient Boosting":
+            label = "Gradient Boosting (recommended for best accuracy)"
+        elif mt == "Random Forest":
+            label = "Random Forest (recommended for robust patterns)"
         options.append({
             "label": label if (not target or available) else f"{mt} (unavailable)",
             "value": mt,
@@ -504,7 +512,7 @@ app.layout = html.Div(
                                 dcc.RadioItems(
                                     id="model-radio",
                                     options=_available_model_types(None),
-                                    value="Linear Regression",
+                                    value="Gradient Boosting",
                                     labelStyle={
                                         "display": "flex", "alignItems": "center",
                                         "gap": "10px", "marginBottom": "12px",
@@ -704,8 +712,15 @@ def update_model_helper(model_type):
     if not model_type:
         return "Choose a model to see what kind of prediction behavior it emphasizes."
 
-    badge_text = "Best for detail" if model_type == "Random Forest" else "Best for interpretability"
-    badge_color = ACCENT if model_type == "Random Forest" else "#6c757d"
+    if model_type == "Gradient Boosting":
+        badge_text = "Best accuracy"
+        badge_color = SUCCESS
+    elif model_type == "Random Forest":
+        badge_text = "Best for robustness"
+        badge_color = ACCENT
+    else:
+        badge_text = "Best for interpretability"
+        badge_color = "#6c757d"
     return [
         html.Div(
             badge_text,
@@ -856,7 +871,8 @@ def run_prediction(n_clicks, target, model_type, selected_date):
     status = html.Div(
         (
             f"✅  {model_type}"
-            f"{'  ·  richer pattern mode' if model_type == 'Random Forest' else ''}"
+            f"{'  ·  highest-accuracy mode' if model_type == 'Gradient Boosting' else ''}"
+            f"{'  ·  robust pattern mode' if model_type == 'Random Forest' else ''}"
             f"  ·  {target}  ·  {pred_date.strftime('%b %d, %Y')}"
         ),
         style={
@@ -874,7 +890,9 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         f"{target} ({unit})  ·  {model_type}  ·  "
         f"Predicted for {pred_date.strftime('%B %d, %Y')}"
     )
-    if model_type == "Random Forest":
+    if model_type == "Gradient Boosting":
+        title += "  ·  highest-accuracy view"
+    elif model_type == "Random Forest":
         title += "  ·  enhanced pattern view"
 
     # ── Summary stats ─────────────────────────────────
