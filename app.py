@@ -122,6 +122,59 @@ TARGET_SHORT_NOTES = {
     "Nitrate": "Use this to inspect likely nutrient concentration hotspots across the network.",
 }
 
+# Major Iowa cities for reverse-geocoding interpolated hover points
+IOWA_CITIES = [
+    ("Des Moines",     41.5868, -93.6250),
+    ("Cedar Rapids",   41.9779, -91.6656),
+    ("Davenport",      41.5236, -90.5776),
+    ("Sioux City",     42.4999, -96.4003),
+    ("Iowa City",      41.6611, -91.5302),
+    ("Waterloo",       42.4928, -92.3426),
+    ("Council Bluffs", 41.2619, -95.8608),
+    ("Ames",           42.0308, -93.6319),
+    ("Dubuque",        42.5006, -90.6646),
+    ("Ankeny",         41.7321, -93.6030),
+    ("West Des Moines",41.5772, -93.7113),
+    ("Cedar Falls",    42.5349, -92.4452),
+    ("Marion",         42.0341, -91.5974),
+    ("Bettendorf",     41.5244, -90.5121),
+    ("Urbandale",      41.6265, -93.7122),
+    ("Mason City",     43.1536, -93.2010),
+    ("Ottumwa",        41.0200, -92.4113),
+    ("Marshalltown",   42.0494, -92.9080),
+    ("Clinton",        41.8444, -90.1887),
+    ("Burlington",     40.8073, -91.1128),
+    ("Fort Dodge",     42.4975, -94.1680),
+    ("Muscatine",      41.4245, -91.0432),
+    ("Coralville",     41.6727, -91.5802),
+    ("Waukee",         41.6113, -93.8888),
+    ("North Liberty",  41.7494, -91.6052),
+    ("Oskaloosa",      41.2961, -92.6457),
+    ("Storm Lake",     42.6411, -95.2097),
+    ("Carroll",        42.0661, -94.8672),
+    ("Fairfield",      41.0086, -91.9657),
+    ("Spencer",        43.1414, -95.1441),
+]
+
+
+def _nearest_city(lat: float, lon: float) -> str:
+    """Return the name of the closest Iowa city to the given coordinates."""
+    best_name, best_dist = "Iowa", float("inf")
+    for name, clat, clon in IOWA_CITIES:
+        dist = (lat - clat) ** 2 + (lon - clon) ** 2
+        if dist < best_dist:
+            best_dist = dist
+            best_name = name
+    return best_name
+
+
+def _nearest_station_name(lat: float, lon: float) -> str:
+    """Return the MonitoringLocationName of the closest station."""
+    dists = (STATIONS[LAT_COL] - lat) ** 2 + (STATIONS[LON_COL] - lon) ** 2
+    idx = dists.idxmin()
+    name = STATIONS.loc[idx, "MonitoringLocationName"]
+    return str(name) if pd.notna(name) else "Unknown"
+
 
 # ─────────────────────────────────────────────────────────────
 # MODEL LOADING
@@ -284,46 +337,102 @@ def interpolate_to_grid(df: pd.DataFrame, resolution: int = 120) -> tuple:
 # ─────────────────────────────────────────────────────────────
 # UI STYLE CONSTANTS
 # ─────────────────────────────────────────────────────────────
-ACCENT       = "#1a6eb5"
-ACCENT_LIGHT = "#e8f1fb"
-BORDER       = "#d4d4d4"
-TEXT_DARK    = "#1a1a1a"
-TEXT_MID     = "#555555"
-TEXT_LIGHT   = "#888888"
+NAVY         = "#0b1929"          # header background
+ACCENT       = "#2563eb"          # primary interactive blue
+ACCENT_DIM   = "#1e50c0"          # hover / pressed
+BORDER       = "#e4eaf2"
+TEXT_DARK    = "#0f172a"
+TEXT_MID     = "#4b5a6e"
+TEXT_LIGHT   = "#8fa3b8"
 BG_WHITE     = "#ffffff"
-BG_PAGE      = "#f5f7fa"
-SUCCESS      = "#1e7e34"
-DANGER       = "#c0392b"
-FONT         = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+BG_PAGE      = "#f0f4fa"          # subtle blue-tinted page
+SUCCESS      = "#15803d"
+DANGER       = "#dc2626"
+FONT         = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
 CARD_STYLE = {
     "background": BG_WHITE,
-    "borderRadius": "12px",
-    "border": f"1px solid {BORDER}",
-    "padding": "24px",
-    "marginBottom": "20px",
+    "borderRadius": "14px",
+    "border": "none",
+    "boxShadow": "0 1px 4px rgba(11,25,41,0.08), 0 0 0 1px rgba(11,25,41,0.04)",
+    "padding": "22px",
+    "marginBottom": "0",
 }
 
 SIDECARD_STYLE = {
-    **CARD_STYLE,
-    "padding": "18px",
+    "padding": "20px 22px",
 }
 
 LABEL_STYLE = {
     "fontFamily": FONT,
-    "fontSize": "13px",
-    "fontWeight": "600",
-    "color": TEXT_MID,
-    "letterSpacing": "0.04em",
-    "textTransform": "uppercase",
+    "fontSize": "11px",
+    "fontWeight": "500",
+    "color": TEXT_LIGHT,
     "marginBottom": "8px",
     "display": "block",
+}
+
+DIVIDER_STYLE = {
+    "height": "1px",
+    "background": BORDER,
+    "margin": "0",
 }
 
 
 # ─────────────────────────────────────────────────────────────
 # FIGURE HELPERS
 # ─────────────────────────────────────────────────────────────
+
+# Neighboring-state label positions (within Iowa's viewport)
+_NEIGHBOR_LABELS = [
+    ("MINNESOTA",   44.3, -94.2),
+    ("WISCONSIN",   43.4, -90.4),
+    ("ILLINOIS",    41.0, -90.1),
+    ("MISSOURI",    39.7, -92.8),
+    ("NEBRASKA",    41.6, -96.7),
+    ("S. DAKOTA",   43.9, -97.1),
+]
+_IOWA_LABEL = ("IOWA", 42.1, -93.5)
+
+# Major Iowa city markers for map reference
+_IOWA_CITY_MARKERS = [
+    ("Des Moines",      41.5868, -93.6250),
+    ("Cedar Rapids",    41.9779, -91.6656),
+    ("Davenport",       41.5236, -90.5776),
+    ("Sioux City",      42.4999, -96.4003),
+    ("Iowa City",       41.6611, -91.5302),
+    ("Waterloo",        42.4928, -92.3426),
+    ("Council Bluffs",  41.2619, -95.8608),
+    ("Ames",            42.0308, -93.6319),
+    ("Dubuque",         42.5006, -90.6646),
+    ("Mason City",      43.1536, -93.2010),
+    ("Fort Dodge",      42.4975, -94.1680),
+    ("Ottumwa",         41.0200, -92.4113),
+]
+
+
+def _add_map_labels(fig: go.Figure) -> None:
+    """Add Iowa label and neighbor state labels only — no city clutter."""
+    fig.add_trace(go.Scattergeo(
+        lat=[_IOWA_LABEL[1]],
+        lon=[_IOWA_LABEL[2]],
+        mode="text",
+        text=[_IOWA_LABEL[0]],
+        textfont=dict(size=14, color=ACCENT, family=FONT),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scattergeo(
+        lat=[r[1] for r in _NEIGHBOR_LABELS],
+        lon=[r[2] for r in _NEIGHBOR_LABELS],
+        mode="text",
+        text=[r[0] for r in _NEIGHBOR_LABELS],
+        textfont=dict(size=9, color="#9fb8cc", family=FONT),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+
 def empty_map_figure() -> go.Figure:
     """Base map with station dots — shown before first prediction."""
     fig = go.Figure()
@@ -346,27 +455,27 @@ def empty_map_figure() -> go.Figure:
             "Provider: %{customdata[2]}<br>"
             "Climate station: %{customdata[3]}<br>"
             "Distance to climate station: %{customdata[4]:.1f} km<br>"
-            "Latitude: %{lat:.3f}<br>"
-            "Longitude: %{lon:.3f}<extra></extra>"
+            "Coordinates: %{lat:.4f}°N, %{lon:.4f}°W<extra></extra>"
         ),
     ))
+    _add_map_labels(fig)
     _apply_geo_layout(fig)
     return fig
 
 
-def _apply_geo_layout(fig: go.Figure, height: int = 520) -> None:
+def _apply_geo_layout(fig: go.Figure, height: int = 560) -> None:
     """Apply consistent geo + paper layout to a figure in-place."""
     fig.update_layout(
         geo=dict(
             scope="usa",
             projection_type="albers usa",
-            showland=True,  landcolor="#eef1f5",
-            showlakes=True, lakecolor="#d0e8f5",
-            showrivers=True, rivercolor="#c0ddf0",
-            showcoastlines=True, coastlinecolor=BORDER,
-            showsubunits=True,   subunitcolor=BORDER,
-            bgcolor=BG_WHITE,
-            # Zoomed in to Iowa/Midwest where the stations actually live
+            showland=True,    landcolor="#e8edf5",
+            showlakes=True,   lakecolor="#c2d8ee",
+            showrivers=True,  rivercolor="#9ec4df",
+            showcoastlines=True, coastlinecolor="#7a9ab5",
+            showsubunits=True,   subunitcolor="#8bafc8",
+            subunitwidth=1.5,
+            bgcolor="#dde7f2",
             center=dict(lat=42.0, lon=-93.5),
             lataxis_range=[39.0, 45.0],
             lonaxis_range=[-97.5, -89.5],
@@ -374,61 +483,34 @@ def _apply_geo_layout(fig: go.Figure, height: int = 520) -> None:
         margin=dict(l=0, r=0, t=0, b=0),
         paper_bgcolor=BG_WHITE,
         plot_bgcolor=BG_WHITE,
-        font=dict(family=FONT),
+        font=dict(family=FONT, size=12),
         legend=dict(
             orientation="h", yanchor="bottom", y=0.02,
             xanchor="left", x=0.02,
-            bgcolor="rgba(255,255,255,0.85)",
+            bgcolor="rgba(255,255,255,0.88)",
             bordercolor=BORDER, borderwidth=1,
-            font=dict(size=12),
+            font=dict(size=11),
         ),
         height=height,
     )
 
 
 def _stat_tile(label: str, value: str) -> html.Div:
-    """Small metric tile for the summary stats panel."""
     return html.Div(
-        style={
-            "background": BG_PAGE, "borderRadius": "8px",
-            "padding": "10px 12px", "textAlign": "center",
-        },
+        style={"textAlign": "center", "padding": "4px 0"},
         children=[
-            html.Div(label, style={
-                "fontSize": "11px", "color": TEXT_LIGHT, "fontWeight": "600",
-                "textTransform": "uppercase", "letterSpacing": "0.05em",
-                "marginBottom": "4px",
-            }),
-            html.Div(value, style={
-                "fontSize": "15px", "fontWeight": "700", "color": TEXT_DARK,
-            }),
+            html.Div(value, style={"fontSize": "17px", "fontWeight": "700", "color": TEXT_DARK, "marginBottom": "3px"}),
+            html.Div(label, style={"fontSize": "10px", "color": TEXT_LIGHT, "fontWeight": "500"}),
         ],
     )
 
 
 def _info_row(label: str, value: str) -> html.Div:
     return html.Div(
-        style={
-            "display": "flex",
-            "justifyContent": "space-between",
-            "gap": "12px",
-            "padding": "8px 0",
-            "borderBottom": f"1px solid {ACCENT_LIGHT}",
-        },
+        style={"display": "flex", "justifyContent": "space-between", "gap": "8px", "padding": "4px 0"},
         children=[
-            html.Span(label, style={
-                "fontSize": "12px",
-                "textTransform": "uppercase",
-                "letterSpacing": "0.05em",
-                "color": TEXT_LIGHT,
-                "fontWeight": "700",
-            }),
-            html.Span(value, style={
-                "fontSize": "13px",
-                "color": TEXT_DARK,
-                "fontWeight": "600",
-                "textAlign": "right",
-            }),
+            html.Span(label, style={"fontSize": "12px", "color": TEXT_LIGHT}),
+            html.Span(value, style={"fontSize": "12px", "color": TEXT_DARK, "fontWeight": "500", "textAlign": "right"}),
         ],
     )
 
@@ -459,53 +541,20 @@ def _performance_panel(target: str | None, model_type: str | None) -> html.Div:
         return html.Div(
             style=SIDECARD_STYLE,
             children=[
-                html.Span("Model Quality", style=LABEL_STYLE),
-                html.Div(
-                    "Pick a target and model to see R^2, cross-validation score, RMSE, MAE, and sample counts.",
-                    style={"fontSize": "14px", "color": TEXT_MID, "lineHeight": "1.6"},
-                ),
+                html.Div("How accurate is it?", style={"fontSize": "12px", "color": TEXT_LIGHT}),
             ],
         )
 
-    badge = "Best saved model" if bool(metric_row.get("best_model_for_target", False)) else "Alternative model"
-    badge_color = SUCCESS if bool(metric_row.get("best_model_for_target", False)) else ACCENT
+    r2_val = float(metric_row.get("r2")  or 0)
+    rmse   = float(metric_row.get("rmse") or 0)
+    unit   = TARGET_UNITS.get(target, "")
 
     return html.Div(
         style=SIDECARD_STYLE,
         children=[
-            html.Span("Model Quality", style=LABEL_STYLE),
-            html.Div(
-                badge,
-                style={
-                    "display": "inline-block",
-                    "marginBottom": "10px",
-                    "padding": "4px 10px",
-                    "borderRadius": "999px",
-                    "background": badge_color,
-                    "color": BG_WHITE,
-                    "fontSize": "11px",
-                    "fontWeight": "700",
-                    "letterSpacing": "0.04em",
-                    "textTransform": "uppercase",
-                },
-            ),
-            html.Div(
-                style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px", "marginBottom": "14px"},
-                children=[
-                    _stat_tile("Holdout R²", _fmt_metric(metric_row.get("r2"))),
-                    _stat_tile("CV R²", _fmt_metric(metric_row.get("cv_r2_mean"))),
-                    _stat_tile("RMSE", _fmt_metric(metric_row.get("rmse"))),
-                    _stat_tile("MAE", _fmt_metric(metric_row.get("mae"))),
-                ],
-            ),
-            _info_row("CV spread", _fmt_metric(metric_row.get("cv_r2_std"))),
-            _info_row("Rows used", f"{int(metric_row.get('rows_used', 0)):,}"),
-            _info_row("Train / Test", f"{int(metric_row.get('train_rows', 0)):,} / {int(metric_row.get('test_rows', 0)):,}"),
-            _info_row("Error rate", _fmt_metric(metric_row.get("error_rate_pct"), "%", 2)),
-            html.Div(
-                TARGET_SHORT_NOTES.get(target, ""),
-                style={"marginTop": "12px", "fontSize": "13px", "color": TEXT_MID, "lineHeight": "1.6"},
-            ),
+            html.Div("How accurate is it?", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginBottom": "12px"}),
+            _info_row("R² score", f"{r2_val:.3f}"),
+            _info_row("Avg error (RMSE)", f"{rmse:.2f} {unit}"),
         ],
     )
 
@@ -514,27 +563,21 @@ def _hover_panel_default() -> html.Div:
     return html.Div(
         style=SIDECARD_STYLE,
         children=[
-            html.Span("Hovered Location", style=LABEL_STYLE),
             html.Div(
-                "Hover over any station marker on the map to see its name, coordinates, climate-station match, and predicted value.",
-                style={"fontSize": "14px", "color": TEXT_MID, "lineHeight": "1.6"},
+                "Hover a station on the map",
+                style={"fontSize": "13px", "color": TEXT_LIGHT, "lineHeight": "1.6"},
             ),
         ],
     )
 
 
-def _overview_panel() -> html.Div:
+def _summary_panel_default() -> html.Div:
     return html.Div(
         style=SIDECARD_STYLE,
         children=[
-            html.Span("Map Guide", style=LABEL_STYLE),
             html.Div(
-                style={"display": "grid", "gap": "10px"},
-                children=[
-                    html.Div("The colored surface shows interpolated estimates between stations.", style={"fontSize": "14px", "color": TEXT_DARK}),
-                    html.Div("The outlined dots are actual monitoring stations used by the prediction model.", style={"fontSize": "14px", "color": TEXT_DARK}),
-                    html.Div("Hover a station to see where the value comes from and which location it belongs to.", style={"fontSize": "14px", "color": TEXT_DARK}),
-                ],
+                "Run a prediction to see stats",
+                style={"fontSize": "12px", "color": TEXT_LIGHT, "lineHeight": "1.6"},
             ),
         ],
     )
@@ -561,13 +604,8 @@ def _available_model_types(target) -> list:
     options = []
     for mt in MODEL_PREFIXES:
         available = bool(target and MODELS.get(target, {}).get(mt))
-        label = mt
-        if mt == "Gradient Boosting":
-            label = "Gradient Boosting (recommended for best accuracy)"
-        elif mt == "Random Forest":
-            label = "Random Forest (recommended for robust patterns)"
         options.append({
-            "label": label if (not target or available) else f"{mt} (unavailable)",
+            "label": mt if (not target or available) else f"{mt} (unavailable)",
             "value": mt,
             "disabled": (target is not None and not available),
         })
@@ -593,293 +631,192 @@ DATE_SHORTCUTS = [
     ("In 1 year",   TODAY + timedelta(days=365)),
 ]
 
-_n_loaded           = sum(len(v) for v in MODELS.values())
-_model_status_color = SUCCESS if _n_loaded > 0 else DANGER
-_model_status_text  = (
-    f"{_n_loaded} model(s) loaded" if _n_loaded > 0
-    else "No models found — check MODEL_DIR path in config"
-)
+_n_loaded = sum(len(v) for v in MODELS.values())
 
 app.layout = html.Div(
+    className="app-shell",
     style={"fontFamily": FONT, "backgroundColor": BG_PAGE, "minHeight": "100vh"},
     children=[
 
         # ── Header ─────────────────────────────────────
         html.Div(
             style={
-                "background": f"linear-gradient(135deg, {ACCENT} 0%, #0d4f8c 100%)",
-                "padding": "28px 40px",
-                "marginBottom": "28px",
+                "background": BG_WHITE,
+                "borderTop": f"3px solid {ACCENT}",
+                "borderBottom": f"1px solid {BORDER}",
+                "padding": "16px 32px",
+                "marginBottom": "24px",
+                "textAlign": "center",
             },
-            children=[html.Div(
-                style={"maxWidth": "1200px", "margin": "0 auto"},
-                children=[
-                    html.H1("💧 Water Quality Predictor", style={
-                        "color": "white", "margin": "0 0 6px 0",
-                        "fontSize": "28px", "fontWeight": "700",
-                    }),
-                    html.P(
-                        "Iowa EPA monitoring stations  ·  "
-                        "Pre-trained ML models  ·  "
-                        "Spatial interpolation across station network",
-                        style={
-                            "color": "rgba(255,255,255,0.82)",
-                            "margin": 0, "fontSize": "15px",
-                        },
-                    ),
-                ],
-            )],
+            children=[
+                html.Div(
+                    "Iowa Water Quality Predictor",
+                    style={"fontSize": "22px", "fontWeight": "700", "color": TEXT_DARK, "letterSpacing": "-0.01em"},
+                ),
+            ],
         ),
 
         # ── Main content ────────────────────────────────
         html.Div(
-            style={"maxWidth": "1200px", "margin": "0 auto", "padding": "0 24px 40px"},
+            className="main-content",
+            style={"maxWidth": "1320px", "margin": "0 auto", "padding": "0 24px 40px"},
             children=[
 
                     html.Div(
-                        style={
-                            "display": "grid",
-                            "gridTemplateColumns": "340px 1fr",
-                        "gap": "20px",
-                        "alignItems": "start",
-                    },
-                    children=[
+                        className="dashboard-grid",
+                        style={"display": "grid", "gap": "22px", "alignItems": "start"},
+                        children=[
 
-                        # ── LEFT: Controls ───────────────
-                        html.Div([
+                        html.Div(
+                            className="left-rail",
+                            style={"display": "grid", "gap": "18px"},
+                            children=[
 
-                            # Model status badge (shows at a glance whether pkls loaded)
-                            html.Div(
-                                style={
-                                    "background": "#f0faf3" if _n_loaded > 0 else "#fdf0ef",
-                                    "border": f"1px solid {_model_status_color}",
-                                    "borderRadius": "8px",
-                                    "padding": "10px 14px",
-                                    "fontSize": "13px",
-                                    "color": _model_status_color,
-                                    "fontWeight": "500",
-                                    "marginBottom": "16px",
-                                },
-                                children=f"{'✅' if _n_loaded > 0 else '❌'}  {_model_status_text}",
-                            ),
+                            html.Div(style={**CARD_STYLE, "display": "flex", "flexDirection": "column", "gap": "20px"}, children=[
 
-                            # Target variable
-                            html.Div(style=CARD_STYLE, children=[
-                                html.Span("Target Variable", style=LABEL_STYLE),
-                                dcc.RadioItems(
-                                    id="target-radio",
-                                    options=_available_targets(),
-                                    value=None,
-                                    labelStyle={
-                                        "display": "flex", "alignItems": "center",
-                                        "gap": "10px", "marginBottom": "12px",
-                                        "fontSize": "15px", "color": TEXT_DARK,
-                                        "cursor": "pointer",
-                                    },
-                                    inputStyle={
-                                        "accentColor": ACCENT,
-                                        "width": "16px", "height": "16px",
-                                    },
-                                ),
-                            ]),
+                                # Target variable
+                                html.Div(children=[
+                                    html.Span("What to measure", style=LABEL_STYLE),
+                                    dcc.RadioItems(
+                                        id="target-radio",
+                                        options=_available_targets(),
+                                        value=None,
+                                        labelStyle={
+                                            "display": "flex", "alignItems": "center",
+                                            "gap": "8px", "marginBottom": "6px",
+                                            "fontSize": "13px", "color": TEXT_DARK,
+                                            "cursor": "pointer",
+                                        },
+                                        inputStyle={"accentColor": ACCENT, "width": "14px", "height": "14px"},
+                                    ),
+                                ]),
 
-                            # Model type
-                            html.Div(style=CARD_STYLE, children=[
-                                html.Span("Prediction Model", style=LABEL_STYLE),
-                                dcc.RadioItems(
-                                    id="model-radio",
-                                    options=_available_model_types(None),
-                                    value="Gradient Boosting",
-                                    labelStyle={
-                                        "display": "flex", "alignItems": "center",
-                                        "gap": "10px", "marginBottom": "12px",
-                                        "fontSize": "15px", "color": TEXT_DARK,
-                                        "cursor": "pointer",
-                                    },
-                                    inputStyle={
-                                        "accentColor": ACCENT,
-                                        "width": "16px", "height": "16px",
-                                    },
-                                ),
-                                html.Div(
-                                    id="model-helper",
-                                    style={
-                                        "marginTop": "8px",
-                                        "padding": "10px 12px",
-                                        "background": ACCENT_LIGHT,
-                                        "border": f"1px solid {BORDER}",
-                                        "borderRadius": "8px",
-                                        "fontSize": "13px",
-                                        "lineHeight": "1.5",
-                                        "color": TEXT_MID,
-                                    },
-                                ),
-                            ]),
+                                # Model type
+                                html.Div(children=[
+                                    html.Span("Which model", style=LABEL_STYLE),
+                                    dcc.RadioItems(
+                                        id="model-radio",
+                                        options=_available_model_types(None),
+                                        value="Gradient Boosting",
+                                        labelStyle={
+                                            "display": "flex", "alignItems": "center",
+                                            "gap": "8px", "marginBottom": "6px",
+                                            "fontSize": "13px", "color": TEXT_DARK,
+                                            "cursor": "pointer",
+                                        },
+                                        inputStyle={"accentColor": ACCENT, "width": "14px", "height": "14px"},
+                                    ),
+                                    html.Div(id="model-helper", style={"fontSize": "12px", "lineHeight": "1.5", "color": TEXT_LIGHT}),
+                                ]),
 
-                            # Date input + quick-fill buttons
-                            html.Div(style=CARD_STYLE, children=[
-                                html.Span("Prediction Date", style=LABEL_STYLE),
-                                dcc.DatePickerSingle(
-                                    id="date-picker",
-                                    min_date_allowed=date(2000, 1, 1),
-                                    max_date_allowed=date(2030, 12, 31),
-                                    placeholder="Select a date…",
-                                    display_format="MMM D, YYYY",
-                                    style={"width": "100%", "marginBottom": "14px"},
-                                ),
-                                html.Span("Quick select:", style={
-                                    "fontSize": "12px", "color": TEXT_LIGHT,
-                                    "display": "block", "marginBottom": "10px",
-                                }),
-                                html.Div(
-                                    style={
-                                        "display": "grid",
-                                        "gridTemplateColumns": "1fr 1fr",
-                                        "gap": "8px",
-                                    },
-                                    children=[
-                                        html.Button(
-                                            label,
-                                            id=f"btn-{label.lower().replace(' ', '-')}",
-                                            n_clicks=0,
-                                            style={
-                                                "background": ACCENT_LIGHT,
-                                                "color": ACCENT,
-                                                "border": f"1px solid {ACCENT}",
-                                                "borderRadius": "8px",
-                                                "padding": "7px 6px",
-                                                "fontSize": "12px",
-                                                "fontWeight": "600",
-                                                "cursor": "pointer",
-                                                "fontFamily": FONT,
-                                            },
-                                        )
-                                        for label, _ in DATE_SHORTCUTS
-                                    ],
-                                ),
-                            ]),
-
-                            html.Button(
-                                "▶  Run Prediction",
-                                id="predict-btn",
-                                n_clicks=0,
-                                style={
-                                    "width": "100%",
-                                    "background": ACCENT,
-                                    "color": "white",
-                                    "border": "none",
-                                    "borderRadius": "10px",
-                                    "padding": "14px",
-                                    "fontSize": "16px",
-                                    "fontWeight": "700",
-                                    "cursor": "pointer",
-                                    "fontFamily": FONT,
-                                    "marginBottom": "12px",
-                                    "letterSpacing": "0.02em",
-                                },
-                            ),
-
-                            html.Div(id="status-msg", style={"marginBottom": "12px"}),
-                            html.Div(id="stats-panel"),
-
-                        ]),   # end left panel
-
-                        # ── RIGHT: Map ───────────────────
-                        html.Div([
-                            html.Div(
-                                style={**CARD_STYLE, "padding": "18px"},
-                                children=[
+                                # Date input + quick-fill buttons
+                                html.Div(children=[
+                                    html.Span("When", style=LABEL_STYLE),
+                                    dcc.DatePickerSingle(
+                                        id="date-picker",
+                                        min_date_allowed=date(2000, 1, 1),
+                                        max_date_allowed=date(2030, 12, 31),
+                                        placeholder="Pick a date…",
+                                        display_format="MMM D, YYYY",
+                                        style={"width": "100%", "marginBottom": "10px"},
+                                    ),
                                     html.Div(
-                                        style={"padding": "0 8px 10px"},
+                                        style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "5px"},
                                         children=[
-                                            html.Div(
-                                                id="map-title",
+                                            html.Button(
+                                                label,
+                                                id=f"btn-{label.lower().replace(' ', '-')}",
+                                                n_clicks=0,
                                                 style={
-                                                    "fontSize": "22px",
-                                                    "fontWeight": "700",
-                                                    "color": TEXT_DARK,
-                                                    "marginBottom": "6px",
-                                                },
-                                                children="Iowa monitoring network",
-                                            ),
-                                            html.Div(
-                                                id="map-subtitle",
-                                                style={
-                                                    "fontSize": "14px",
+                                                    "background": BG_PAGE,
                                                     "color": TEXT_MID,
-                                                    "lineHeight": "1.6",
+                                                    "border": f"1px solid {BORDER}",
+                                                    "borderRadius": "7px",
+                                                    "padding": "6px 4px",
+                                                    "fontSize": "11px",
+                                                    "cursor": "pointer",
+                                                    "fontFamily": FONT,
                                                 },
-                                                children=(
-                                                    f"{len(STATIONS)} stations loaded. "
-                                                    "Choose a target, model, and date to render the prediction surface."
-                                                ),
-                                            ),
+                                            )
+                                            for label, _ in DATE_SHORTCUTS
                                         ],
                                     ),
-                                    html.Div(
-                                        id="hero-stats",
-                                        style={
-                                            "display": "grid",
-                                            "gridTemplateColumns": "repeat(4, minmax(0, 1fr))",
-                                            "gap": "10px",
-                                            "padding": "0 8px 14px",
+                                ]),
+
+                                html.Button(
+                                    "Predict",
+                                    id="predict-btn",
+                                    n_clicks=0,
+                                    style={
+                                        "width": "100%",
+                                        "background": ACCENT,
+                                        "color": "white",
+                                        "border": "none",
+                                        "borderRadius": "8px",
+                                        "padding": "11px",
+                                        "fontSize": "14px",
+                                        "fontWeight": "600",
+                                        "cursor": "pointer",
+                                        "fontFamily": FONT,
+                                        "letterSpacing": "0.01em",
+                                    },
+                                ),
+                            ]),
+                            ],
+                        ),
+
+                        html.Div(
+                            className="center-stage",
+                            style={"display": "grid", "gap": "8px"},
+                            children=[
+                            html.Div(
+                                style={
+                                    "display": "flex", "justifyContent": "space-between",
+                                    "alignItems": "center", "padding": "0 2px",
+                                },
+                                children=[
+                                    html.Div(id="map-title", style={"fontSize": "13px", "fontWeight": "600", "color": TEXT_DARK}, children="Monitoring stations"),
+                                    html.Div(id="map-subtitle", style={"fontSize": "12px", "color": TEXT_LIGHT}, children="Pick a variable and date, then hit Predict"),
+                                ],
+                            ),
+                            html.Div(id="status-msg"),
+                            html.Div(
+                                style={**CARD_STYLE, "padding": "6px"},
+                                children=[
+                                    dcc.Graph(
+                                        id="usa-map",
+                                        figure=empty_map_figure(),
+                                        config={
+                                            "displayModeBar": "hover",
+                                            "modeBarButtonsToRemove": ["select2d", "lasso2d"],
+                                            "displaylogo": False,
                                         },
-                                        children=[
-                                            _stat_tile("Stations", f"{len(STATIONS)}"),
-                                            _stat_tile("Target", "Not set"),
-                                            _stat_tile("Model", "Not set"),
-                                            _stat_tile("Date", "Not set"),
-                                        ],
-                                    ),
-                                    html.Div(
-                                        style={
-                                            "display": "grid",
-                                            "gridTemplateColumns": "minmax(0, 1fr) 320px",
-                                            "gap": "16px",
-                                            "alignItems": "start",
-                                        },
-                                        children=[
-                                            dcc.Graph(
-                                                id="usa-map",
-                                                figure=empty_map_figure(),
-                                                config={
-                                                    "displayModeBar": True,
-                                                    "modeBarButtonsToRemove": [
-                                                        "select2d", "lasso2d",
-                                                    ],
-                                                    "displaylogo": False,
-                                                },
-                                            ),
-                                            html.Div(
-                                                style={"display": "grid", "gap": "16px"},
-                                                children=[
-                                                    html.Div(id="performance-panel", children=_performance_panel(None, None)),
-                                                    html.Div(id="hover-panel", children=_hover_panel_default()),
-                                                    _overview_panel(),
-                                                ],
-                                            ),
-                                        ],
                                     ),
                                 ],
                             ),
-                        ]),   # end right panel
+                        ],
+                        ),
+
+                        html.Div(
+                            className="right-rail",
+                            style={"display": "grid", "gap": "0", "alignContent": "start"},
+                            children=[
+                                html.Div(
+                                    style={**CARD_STYLE, "padding": "0", "overflow": "hidden"},
+                                    children=[
+                                        html.Div(id="hover-panel",       children=_hover_panel_default()),
+                                        html.Div(style=DIVIDER_STYLE),
+                                        html.Div(id="stats-panel",       children=_summary_panel_default()),
+                                        html.Div(style=DIVIDER_STYLE),
+                                        html.Div(id="performance-panel", children=_performance_panel(None, None)),
+                                    ],
+                                ),
+                            ],
+                        ),
 
                     ],
                 ),
 
-                # ── Footer ──────────────────────────────
-                html.Div(
-                    style={
-                        "textAlign": "center", "padding": "20px 0 0",
-                        "fontSize": "13px", "color": TEXT_LIGHT,
-                        "borderTop": f"1px solid {BORDER}",
-                    },
-                    children=(
-                        f"{len(STATIONS):,} unique stations  ·  "
-                        f"Features: {', '.join(FEATURE_COLS)}  ·  "
-                        "Interpolation: cubic spline"
-                    ),
-                ),
 
             ],
         ),
@@ -934,35 +871,11 @@ def update_model_options(target, current_model):
 )
 def update_model_helper(model_type):
     if not model_type:
-        return "Choose a model to see what kind of prediction behavior it emphasizes."
-
-    if model_type == "Gradient Boosting":
-        badge_text = "Best accuracy"
-        badge_color = SUCCESS
-    elif model_type == "Random Forest":
-        badge_text = "Best for robustness"
-        badge_color = ACCENT
-    else:
-        badge_text = "Best for interpretability"
-        badge_color = "#6c757d"
-    return [
-        html.Div(
-            badge_text,
-            style={
-                "display": "inline-block",
-                "marginBottom": "6px",
-                "padding": "3px 8px",
-                "borderRadius": "999px",
-                "background": badge_color,
-                "color": "white",
-                "fontSize": "11px",
-                "fontWeight": "700",
-                "letterSpacing": "0.03em",
-                "textTransform": "uppercase",
-            },
-        ),
-        html.Div(MODEL_DESCRIPTIONS.get(model_type, "")),
-    ]
+        return ""
+    return html.Div(
+        MODEL_DESCRIPTIONS.get(model_type, ""),
+        style={"fontSize": "13px", "color": TEXT_MID, "lineHeight": "1.5"},
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -973,7 +886,6 @@ def update_model_helper(model_type):
     Output("status-msg",  "children"),
     Output("map-title",   "children"),
     Output("map-subtitle", "children"),
-    Output("hero-stats", "children"),
     Output("stats-panel", "children"),
     Output("performance-panel", "children"),
     Input("predict-btn",  "n_clicks"),
@@ -1004,21 +916,12 @@ def run_prediction(n_clicks, target, model_type, selected_date):
 
     if errors:
         msg = html.Div(
-            f"⚠️  Please provide {' and '.join(errors)} before running a prediction.",
-            style={
-                "background": "#fdf0ef",
-                "border": f"1px solid {DANGER}",
-                "borderRadius": "8px",
-                "padding": "12px 14px",
-                "fontSize": "14px",
-                "color": DANGER,
-                "fontWeight": "500",
-            },
+            f"Please pick {' and '.join(errors)} first.",
+            style={"fontSize": "12px", "color": DANGER, "padding": "2px 0"},
         )
         return (
             empty_map_figure(),
             msg,
-            no_update,
             no_update,
             no_update,
             no_update,
@@ -1081,8 +984,7 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         hovertemplate=(
             f"<b>Interpolated {target}</b><br>"
             f"Estimated value: %{{marker.color:.2f}} {unit}<br>"
-            "Latitude: %{lat:.3f}<br>"
-            "Longitude: %{lon:.3f}<extra></extra>"
+            "Coordinates: %{lat:.4f}°N, %{lon:.4f}°W<extra></extra>"
         ),
     ))
 
@@ -1116,74 +1018,35 @@ def run_prediction(n_clicks, target, model_type, selected_date):
             "Climate station: %{customdata[3]}<br>"
             "Distance to climate station: %{customdata[4]:.1f} km<br>"
             f"Predicted {target}: %{{customdata[5]:.2f}} {unit}<br>"
-            "Latitude: %{lat:.3f}<br>"
-            "Longitude: %{lon:.3f}<extra></extra>"
+            "Coordinates: %{lat:.4f}°N, %{lon:.4f}°W<extra></extra>"
         ),
     ))
 
+    _add_map_labels(fig)
     _apply_geo_layout(fig)
 
-    # ── Status banner ─────────────────────────────────
-    status = html.Div(
-        (
-            f"✅  {model_type}"
-            f"{'  ·  highest-accuracy mode' if model_type == 'Gradient Boosting' else ''}"
-            f"{'  ·  robust pattern mode' if model_type == 'Random Forest' else ''}"
-            f"  ·  {target}  ·  {pred_date.strftime('%b %d, %Y')}"
-        ),
-        style={
-            "background": "#f0faf3",
-            "border": f"1px solid {SUCCESS}",
-            "borderRadius": "8px",
-            "padding": "12px 14px",
-            "fontSize": "14px",
-            "color": SUCCESS,
-            "fontWeight": "500",
-        },
-    )
-
-    title = f"{target} map for {pred_date.strftime('%B %d, %Y')}"
-    subtitle = (
-        f"{model_type} prediction across {len(station_df)} Iowa monitoring stations. "
-        "Hover a station marker to inspect its exact location and predicted value."
-    )
-
-    hero_stats = [
-        _stat_tile("Stations", f"{len(station_df)}"),
-        _stat_tile("Target", target),
-        _stat_tile("Model", model_type),
-        _stat_tile("Date", pred_date.strftime("%b %d, %Y")),
-    ]
+    title    = f"{target}, {pred_date.strftime('%b %d, %Y')}"
+    subtitle = f"hover a dot for details  ·  {model_type}"
+    status   = ""
 
     # ── Summary stats ─────────────────────────────────
     preds = station_df["predicted"]
-    low_station = station_df.loc[preds.idxmin()]
-    high_station = station_df.loc[preds.idxmax()]
     stats = html.Div(
-        style={**CARD_STYLE, "padding": "18px"},
+        style=SIDECARD_STYLE,
         children=[
-            html.Span("Prediction Summary", style=LABEL_STYLE),
+            html.Div("Across all stations", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginBottom": "12px"}),
             html.Div(
-                style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px"},
+                style={"display": "grid", "gridTemplateColumns": "1fr 1fr 1fr", "gap": "4px"},
                 children=[
-                    _stat_tile("Min",     f"{preds.min():.2f} {unit}"),
-                    _stat_tile("Max",     f"{preds.max():.2f} {unit}"),
-                    _stat_tile("Mean",    f"{preds.mean():.2f} {unit}"),
-                    _stat_tile("Std Dev", f"{preds.std():.2f} {unit}"),
-                ],
-            ),
-            html.Div(
-                style={"display": "grid", "gap": "10px", "marginTop": "16px"},
-                children=[
-                    _info_row("Highest predicted station", f"{high_station['MonitoringLocationName']} ({high_station['predicted']:.2f} {unit})"),
-                    _info_row("Lowest predicted station", f"{low_station['MonitoringLocationName']} ({low_station['predicted']:.2f} {unit})"),
-                    _info_row("Prediction range", f"{(preds.max() - preds.min()):.2f} {unit}"),
+                    _stat_tile("Low",  f"{preds.min():.1f} {unit}"),
+                    _stat_tile("Avg",  f"{preds.mean():.1f} {unit}"),
+                    _stat_tile("High", f"{preds.max():.1f} {unit}"),
                 ],
             ),
         ],
     )
 
-    return fig, status, title, subtitle, hero_stats, stats, _performance_panel(target, model_type)
+    return fig, status, title, subtitle, stats, _performance_panel(target, model_type)
 
 
 @app.callback(
@@ -1204,42 +1067,41 @@ def update_hover_panel(hover_data, target):
     if curve_number == 1 and point.get("customdata"):
         custom = point["customdata"]
         station_name, station_id, provider, climate_station, distance_km, predicted = custom
+        pred_val = float(predicted)
+        city = _nearest_city(float(lat), float(lon)) if lat is not None and lon is not None else ""
         return html.Div(
             style=SIDECARD_STYLE,
             children=[
-                html.Span("Hovered Location", style=LABEL_STYLE),
-                html.Div(station_name, style={"fontSize": "18px", "fontWeight": "700", "color": TEXT_DARK, "marginBottom": "8px"}),
+                html.Div(f"Near {city}", style={"fontSize": "22px", "fontWeight": "700", "color": TEXT_DARK, "marginBottom": "4px", "lineHeight": "1.2"}),
+                html.Div(station_name, style={"fontSize": "11px", "color": TEXT_LIGHT, "marginBottom": "14px", "lineHeight": "1.4"}),
                 html.Div(
-                    f"Predicted {target}: {float(predicted):.2f} {unit}" if target else "Station details",
-                    style={"fontSize": "15px", "color": ACCENT, "fontWeight": "700", "marginBottom": "10px"},
+                    style={"display": "flex", "alignItems": "baseline", "gap": "5px"},
+                    children=[
+                        html.Span(f"{pred_val:.1f}", style={"fontSize": "28px", "fontWeight": "700", "color": ACCENT, "lineHeight": "1"}),
+                        html.Span(unit, style={"fontSize": "14px", "color": TEXT_LIGHT}),
+                    ],
                 ),
-                _info_row("Station ID", str(station_id)),
-                _info_row("Provider", str(provider)),
-                _info_row("Climate station", str(climate_station)),
-                _info_row("Climate distance", f"{float(distance_km):.1f} km"),
-                _info_row("Latitude", f"{float(lat):.4f}"),
-                _info_row("Longitude", f"{float(lon):.4f}"),
             ],
         )
 
-    label = target or "value"
     value = point.get("marker.color")
-    value_text = f"{float(value):.2f} {unit}" if value is not None and target else "Interpolated estimate"
+    city = _nearest_city(float(lat), float(lon)) if lat is not None and lon is not None else "Iowa"
+
     return html.Div(
         style=SIDECARD_STYLE,
         children=[
-            html.Span("Hovered Location", style=LABEL_STYLE),
-            html.Div("Interpolated surface", style={"fontSize": "18px", "fontWeight": "700", "color": TEXT_DARK, "marginBottom": "8px"}),
+            html.Div(f"Near {city}", style={"fontSize": "22px", "fontWeight": "700", "color": TEXT_DARK, "marginBottom": "14px", "lineHeight": "1.2"}),
             html.Div(
-                f"Estimated {label}: {value_text}" if target else value_text,
-                style={"fontSize": "15px", "color": ACCENT, "fontWeight": "700", "marginBottom": "10px"},
+                style={"display": "flex", "alignItems": "baseline", "gap": "5px"},
+                children=[
+                    html.Span(
+                        f"{float(value):.1f}" if value is not None and target else "—",
+                        style={"fontSize": "28px", "fontWeight": "700", "color": TEXT_MID, "lineHeight": "1"},
+                    ),
+                    html.Span(unit, style={"fontSize": "14px", "color": TEXT_LIGHT}),
+                ],
             ),
-            _info_row("Latitude", f"{float(lat):.4f}"),
-            _info_row("Longitude", f"{float(lon):.4f}"),
-            html.Div(
-                "This point comes from the interpolated map surface between monitoring stations, not from a direct station observation.",
-                style={"marginTop": "12px", "fontSize": "13px", "color": TEXT_MID, "lineHeight": "1.6"},
-            ),
+            html.Div("estimated", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginTop": "4px"}),
         ],
     )
 

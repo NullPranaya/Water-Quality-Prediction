@@ -1,0 +1,78 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f0f4fa;
+  color: #0f172a;
+}
+
+/* ── Layout ────────────────────────────────────── */
+.dashboard-grid {
+  grid-template-columns: 248px minmax(0, 1fr) 280px;
+}
+
+/* ── Date picker ───────────────────────────────── */
+.DateInput,
+.DateInput_input {
+  width: 100% !important;
+}
+
+.DateInput_input {
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid #e4eaf2;
+  border-radius: 8px;
+  border-bottom: 1px solid #e4eaf2 !important;
+  background: #f0f4fa;
+  color: #0f172a;
+}
+
+.DateInput_input:focus {
+  border-color: #2563eb !important;
+  border-bottom-color: #2563eb !important;
+  outline: none;
+  background: #fff;
+}
+
+.SingleDatePickerInput {
+  border: none !important;
+  width: 100%;
+  background: transparent;
+}
+
+/* ── Predict button hover ──────────────────────── */
+#predict-btn:hover {
+  background: #1e50c0 !important;
+}
+
+/* ── Responsive ────────────────────────────────── */
+@media (max-width: 1220px) {
+  .dashboard-grid {
+    grid-template-columns: 230px minmax(0, 1fr);
+  }
+
+  .right-rail {
+    grid-column: 1 / -1;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .right-rail {
+    grid-column: auto !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .right-rail {
+    grid-template-columns: 1fr !important;
+  }
+}
