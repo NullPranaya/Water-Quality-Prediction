@@ -247,10 +247,14 @@ Both model types are trained on the same ten climate-derived features:
 
 ### Model Architecture
 
-Each model is a scikit-learn `Pipeline` with two steps:
+Each saved model is a scikit-learn `Pipeline` that keeps runtime inference
+compatible with the same ten raw climate features while refining them during
+training:
 
-1. `StandardScaler` — normalizes features to zero mean, unit variance
-2. Model — `LinearRegression` or `RandomForestRegressor(n_estimators=200, max_depth=12, min_samples_leaf=5)`
+1. `SimpleImputer(strategy="median")` — fills missing climate values
+2. Derived features — cyclical seasonality (`sin/cos(doy)`), temperature range, and aggregate moisture
+3. Optional `StandardScaler` for the linear model
+4. Model — `LinearRegression`, tuned `RandomForestRegressor`, or `HistGradientBoostingRegressor`
 
 An 80/20 train/test split with `random_state=42` is used for all targets.
 
@@ -308,7 +312,7 @@ The repository includes pre-generated evaluation outputs from the numpy linear r
 |---|---|
 | Dashboard | Dash 4.x, Plotly 6.x |
 | Data processing | pandas, NumPy |
-| Machine learning | scikit-learn (Linear Regression, Random Forest, Pipeline, StandardScaler) |
+| Machine learning | scikit-learn (Linear Regression, Random Forest, HistGradientBoosting, Pipeline, SimpleImputer, StandardScaler) |
 | Spatial interpolation | SciPy (`griddata` — cubic spline) |
 | Geospatial | GeoPandas, Shapely, pyproj, Folium |
 | Notebooks | JupyterLab, IPython |
