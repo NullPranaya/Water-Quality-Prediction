@@ -49,6 +49,7 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────
 DATA_FILE_PATH = "./data/tabular/merged/epa-climate-merged.csv"
 MODEL_DIR      = "./src/modeling"               # folder containing the .pkl files
+METRICS_PATH   = "./data/tabular/modeling/sklearn_model_metrics.csv"
 
 # Column names in the CSV
 DATE_COL = "ActivityStartDateTime"
@@ -67,6 +68,8 @@ FEATURE_COLS = [
     "snow",
     "snowd",
     "distance_to_climate_station_km",
+    "LatitudeMeasure",
+    "LongitudeMeasure",
 ]
 
 # Target variable display name → CSV column name
@@ -112,6 +115,13 @@ MODEL_DESCRIPTIONS = {
     "Linear Regression": "Fast baseline model with simpler, more linear behavior.",
 }
 
+TARGET_SHORT_NOTES = {
+    "Water Temperature": "Use this to inspect seasonal warming and cooling patterns across stations.",
+    "pH": "Use this to compare acidity and alkalinity patterns across Iowa waterways.",
+    "Dissolved Oxygen": "Use this to spot areas where oxygen availability may be stronger or weaker.",
+    "Nitrate": "Use this to inspect likely nutrient concentration hotspots across the network.",
+}
+
 
 # ─────────────────────────────────────────────────────────────
 # MODEL LOADING
@@ -151,6 +161,18 @@ def load_models() -> dict:
     return models
 
 
+def load_model_metrics() -> pd.DataFrame:
+    """Load saved training metrics for display in the dashboard."""
+    metrics_path = Path(METRICS_PATH)
+    if not metrics_path.exists():
+        print(f"[WARNING] Metrics file not found: {metrics_path}")
+        return pd.DataFrame()
+
+    metrics = pd.read_csv(metrics_path)
+    print(f"[INFO] Loaded model metrics from '{metrics_path}'")
+    return metrics
+
+
 # ─────────────────────────────────────────────────────────────
 # DATA LOADING
 # The CSV is still needed at runtime — but only for station
@@ -176,8 +198,9 @@ def load_station_data() -> pd.DataFrame:
     return stations
 
 
-MODELS   = load_models()
+MODELS = load_models()
 STATIONS = load_station_data()
+MODEL_METRICS = load_model_metrics()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -281,6 +304,11 @@ CARD_STYLE = {
     "marginBottom": "20px",
 }
 
+SIDECARD_STYLE = {
+    **CARD_STYLE,
+    "padding": "18px",
+}
+
 LABEL_STYLE = {
     "fontFamily": FONT,
     "fontSize": "13px",
@@ -303,9 +331,24 @@ def empty_map_figure() -> go.Figure:
         lat=STATIONS[LAT_COL],
         lon=STATIONS[LON_COL],
         mode="markers",
-        marker=dict(size=5, color=ACCENT, opacity=0.45, line=dict(width=0)),
+        customdata=np.column_stack([
+            STATIONS["MonitoringLocationName"].fillna("Unknown station"),
+            STATIONS["MonitoringLocationIdentifier"].fillna("Unknown ID"),
+            STATIONS["ProviderName"].fillna("Unknown provider"),
+            STATIONS["climate_station_name"].fillna("Unknown climate station"),
+            STATIONS["distance_to_climate_station_km"].fillna(0.0),
+        ]),
+        marker=dict(size=6, color=ACCENT, opacity=0.55, line=dict(width=0)),
         name="Monitoring stations",
-        hovertemplate="<b>Station</b><br>Lat: %{lat:.3f}  Lon: %{lon:.3f}<extra></extra>",
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "Station ID: %{customdata[1]}<br>"
+            "Provider: %{customdata[2]}<br>"
+            "Climate station: %{customdata[3]}<br>"
+            "Distance to climate station: %{customdata[4]:.1f} km<br>"
+            "Latitude: %{lat:.3f}<br>"
+            "Longitude: %{lon:.3f}<extra></extra>"
+        ),
     ))
     _apply_geo_layout(fig)
     return fig
@@ -359,6 +402,140 @@ def _stat_tile(label: str, value: str) -> html.Div:
             html.Div(value, style={
                 "fontSize": "15px", "fontWeight": "700", "color": TEXT_DARK,
             }),
+        ],
+    )
+
+
+def _info_row(label: str, value: str) -> html.Div:
+    return html.Div(
+        style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "gap": "12px",
+            "padding": "8px 0",
+            "borderBottom": f"1px solid {ACCENT_LIGHT}",
+        },
+        children=[
+            html.Span(label, style={
+                "fontSize": "12px",
+                "textTransform": "uppercase",
+                "letterSpacing": "0.05em",
+                "color": TEXT_LIGHT,
+                "fontWeight": "700",
+            }),
+            html.Span(value, style={
+                "fontSize": "13px",
+                "color": TEXT_DARK,
+                "fontWeight": "600",
+                "textAlign": "right",
+            }),
+        ],
+    )
+
+
+def _fmt_metric(value: float | int | None, suffix: str = "", digits: int = 3) -> str:
+    if value is None or pd.isna(value):
+        return "N/A"
+    return f"{value:.{digits}f}{suffix}"
+
+
+def _get_metric_row(target: str | None, model_type: str | None) -> pd.Series | None:
+    if not target or not model_type or MODEL_METRICS.empty:
+        return None
+
+    match = MODEL_METRICS[
+        (MODEL_METRICS["target"] == target) &
+        (MODEL_METRICS["model"] == model_type)
+    ]
+    if match.empty:
+        return None
+    return match.iloc[0]
+
+
+def _performance_panel(target: str | None, model_type: str | None) -> html.Div:
+    metric_row = _get_metric_row(target, model_type)
+
+    if metric_row is None:
+        return html.Div(
+            style=SIDECARD_STYLE,
+            children=[
+                html.Span("Model Quality", style=LABEL_STYLE),
+                html.Div(
+                    "Pick a target and model to see R^2, cross-validation score, RMSE, MAE, and sample counts.",
+                    style={"fontSize": "14px", "color": TEXT_MID, "lineHeight": "1.6"},
+                ),
+            ],
+        )
+
+    badge = "Best saved model" if bool(metric_row.get("best_model_for_target", False)) else "Alternative model"
+    badge_color = SUCCESS if bool(metric_row.get("best_model_for_target", False)) else ACCENT
+
+    return html.Div(
+        style=SIDECARD_STYLE,
+        children=[
+            html.Span("Model Quality", style=LABEL_STYLE),
+            html.Div(
+                badge,
+                style={
+                    "display": "inline-block",
+                    "marginBottom": "10px",
+                    "padding": "4px 10px",
+                    "borderRadius": "999px",
+                    "background": badge_color,
+                    "color": BG_WHITE,
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                    "letterSpacing": "0.04em",
+                    "textTransform": "uppercase",
+                },
+            ),
+            html.Div(
+                style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px", "marginBottom": "14px"},
+                children=[
+                    _stat_tile("Holdout R²", _fmt_metric(metric_row.get("r2"))),
+                    _stat_tile("CV R²", _fmt_metric(metric_row.get("cv_r2_mean"))),
+                    _stat_tile("RMSE", _fmt_metric(metric_row.get("rmse"))),
+                    _stat_tile("MAE", _fmt_metric(metric_row.get("mae"))),
+                ],
+            ),
+            _info_row("CV spread", _fmt_metric(metric_row.get("cv_r2_std"))),
+            _info_row("Rows used", f"{int(metric_row.get('rows_used', 0)):,}"),
+            _info_row("Train / Test", f"{int(metric_row.get('train_rows', 0)):,} / {int(metric_row.get('test_rows', 0)):,}"),
+            _info_row("Error rate", _fmt_metric(metric_row.get("error_rate_pct"), "%", 2)),
+            html.Div(
+                TARGET_SHORT_NOTES.get(target, ""),
+                style={"marginTop": "12px", "fontSize": "13px", "color": TEXT_MID, "lineHeight": "1.6"},
+            ),
+        ],
+    )
+
+
+def _hover_panel_default() -> html.Div:
+    return html.Div(
+        style=SIDECARD_STYLE,
+        children=[
+            html.Span("Hovered Location", style=LABEL_STYLE),
+            html.Div(
+                "Hover over any station marker on the map to see its name, coordinates, climate-station match, and predicted value.",
+                style={"fontSize": "14px", "color": TEXT_MID, "lineHeight": "1.6"},
+            ),
+        ],
+    )
+
+
+def _overview_panel() -> html.Div:
+    return html.Div(
+        style=SIDECARD_STYLE,
+        children=[
+            html.Span("Map Guide", style=LABEL_STYLE),
+            html.Div(
+                style={"display": "grid", "gap": "10px"},
+                children=[
+                    html.Div("The colored surface shows interpolated estimates between stations.", style={"fontSize": "14px", "color": TEXT_DARK}),
+                    html.Div("The outlined dots are actual monitoring stations used by the prediction model.", style={"fontSize": "14px", "color": TEXT_DARK}),
+                    html.Div("Hover a station to see where the value comes from and which location it belongs to.", style={"fontSize": "14px", "color": TEXT_DARK}),
+                ],
+            ),
         ],
     )
 
@@ -459,10 +636,10 @@ app.layout = html.Div(
             style={"maxWidth": "1200px", "margin": "0 auto", "padding": "0 24px 40px"},
             children=[
 
-                html.Div(
-                    style={
-                        "display": "grid",
-                        "gridTemplateColumns": "340px 1fr",
+                    html.Div(
+                        style={
+                            "display": "grid",
+                            "gridTemplateColumns": "340px 1fr",
                         "gap": "20px",
                         "alignItems": "start",
                     },
@@ -610,31 +787,78 @@ app.layout = html.Div(
                         # ── RIGHT: Map ───────────────────
                         html.Div([
                             html.Div(
-                                style={**CARD_STYLE, "padding": "16px"},
+                                style={**CARD_STYLE, "padding": "18px"},
                                 children=[
                                     html.Div(
-                                        id="map-title",
-                                        style={
-                                            "fontSize": "16px", "fontWeight": "600",
-                                            "color": TEXT_DARK,
-                                            "marginBottom": "12px",
-                                            "padding": "0 8px",
-                                        },
-                                        children=(
-                                            f"{len(STATIONS)} monitoring stations — "
-                                            "select options and run a prediction"
-                                        ),
+                                        style={"padding": "0 8px 10px"},
+                                        children=[
+                                            html.Div(
+                                                id="map-title",
+                                                style={
+                                                    "fontSize": "22px",
+                                                    "fontWeight": "700",
+                                                    "color": TEXT_DARK,
+                                                    "marginBottom": "6px",
+                                                },
+                                                children="Iowa monitoring network",
+                                            ),
+                                            html.Div(
+                                                id="map-subtitle",
+                                                style={
+                                                    "fontSize": "14px",
+                                                    "color": TEXT_MID,
+                                                    "lineHeight": "1.6",
+                                                },
+                                                children=(
+                                                    f"{len(STATIONS)} stations loaded. "
+                                                    "Choose a target, model, and date to render the prediction surface."
+                                                ),
+                                            ),
+                                        ],
                                     ),
-                                    dcc.Graph(
-                                        id="usa-map",
-                                        figure=empty_map_figure(),
-                                        config={
-                                            "displayModeBar": True,
-                                            "modeBarButtonsToRemove": [
-                                                "select2d", "lasso2d",
-                                            ],
-                                            "displaylogo": False,
+                                    html.Div(
+                                        id="hero-stats",
+                                        style={
+                                            "display": "grid",
+                                            "gridTemplateColumns": "repeat(4, minmax(0, 1fr))",
+                                            "gap": "10px",
+                                            "padding": "0 8px 14px",
                                         },
+                                        children=[
+                                            _stat_tile("Stations", f"{len(STATIONS)}"),
+                                            _stat_tile("Target", "Not set"),
+                                            _stat_tile("Model", "Not set"),
+                                            _stat_tile("Date", "Not set"),
+                                        ],
+                                    ),
+                                    html.Div(
+                                        style={
+                                            "display": "grid",
+                                            "gridTemplateColumns": "minmax(0, 1fr) 320px",
+                                            "gap": "16px",
+                                            "alignItems": "start",
+                                        },
+                                        children=[
+                                            dcc.Graph(
+                                                id="usa-map",
+                                                figure=empty_map_figure(),
+                                                config={
+                                                    "displayModeBar": True,
+                                                    "modeBarButtonsToRemove": [
+                                                        "select2d", "lasso2d",
+                                                    ],
+                                                    "displaylogo": False,
+                                                },
+                                            ),
+                                            html.Div(
+                                                style={"display": "grid", "gap": "16px"},
+                                                children=[
+                                                    html.Div(id="performance-panel", children=_performance_panel(None, None)),
+                                                    html.Div(id="hover-panel", children=_hover_panel_default()),
+                                                    _overview_panel(),
+                                                ],
+                                            ),
+                                        ],
                                     ),
                                 ],
                             ),
@@ -748,7 +972,10 @@ def update_model_helper(model_type):
     Output("usa-map",     "figure"),
     Output("status-msg",  "children"),
     Output("map-title",   "children"),
+    Output("map-subtitle", "children"),
+    Output("hero-stats", "children"),
     Output("stats-panel", "children"),
+    Output("performance-panel", "children"),
     Input("predict-btn",  "n_clicks"),
     State("target-radio", "value"),
     State("model-radio",  "value"),
@@ -788,7 +1015,15 @@ def run_prediction(n_clicks, target, model_type, selected_date):
                 "fontWeight": "500",
             },
         )
-        return empty_map_figure(), msg, no_update, no_update
+        return (
+            empty_map_figure(),
+            msg,
+            no_update,
+            no_update,
+            no_update,
+            no_update,
+            _performance_panel(target, model_type),
+        )
 
     # ── Predict ──────────────────────────────────────
     pred_date  = date.fromisoformat(selected_date)
@@ -825,6 +1060,10 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         lat=flat_lats[idx],
         lon=flat_lons[idx],
         mode="markers",
+        customdata=np.column_stack([
+            np.full(len(idx), "Interpolated surface"),
+            np.full(len(idx), target),
+        ]),
         marker=dict(
             size=9,
             color=flat_vals[idx],
@@ -840,28 +1079,45 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         ),
         name="Interpolated grid",
         hovertemplate=(
-            f"<b>{target}</b>: %{{marker.color:.2f}} {unit}<br>"
-            "Lat: %{lat:.3f}  Lon: %{lon:.3f}<extra></extra>"
+            f"<b>Interpolated {target}</b><br>"
+            f"Estimated value: %{{marker.color:.2f}} {unit}<br>"
+            "Latitude: %{lat:.3f}<br>"
+            "Longitude: %{lon:.3f}<extra></extra>"
         ),
     ))
 
     # Actual station markers on top
+    station_customdata = np.column_stack([
+        station_df["MonitoringLocationName"].fillna("Unknown station"),
+        station_df["MonitoringLocationIdentifier"].fillna("Unknown ID"),
+        station_df["ProviderName"].fillna("Unknown provider"),
+        station_df["climate_station_name"].fillna("Unknown climate station"),
+        station_df["distance_to_climate_station_km"].fillna(0.0),
+        station_df["predicted"].round(4),
+    ])
     fig.add_trace(go.Scattergeo(
         lat=station_df[LAT_COL],
         lon=station_df[LON_COL],
         mode="markers",
+        customdata=station_customdata,
         marker=dict(
-            size=8,
+            size=10,
+            symbol="circle",
             color=station_df["predicted"],
             colorscale=colorscale,
             cmin=vmin, cmax=vmax,
-            line=dict(color="white", width=0.8),
+            line=dict(color="white", width=1.2),
         ),
         name="Monitoring stations",
         hovertemplate=(
-            f"<b>Station — {target}</b><br>"
-            f"Predicted: %{{marker.color:.2f}} {unit}<br>"
-            "Lat: %{lat:.3f}  Lon: %{lon:.3f}<extra></extra>"
+            "<b>%{customdata[0]}</b><br>"
+            "Station ID: %{customdata[1]}<br>"
+            "Provider: %{customdata[2]}<br>"
+            "Climate station: %{customdata[3]}<br>"
+            "Distance to climate station: %{customdata[4]:.1f} km<br>"
+            f"Predicted {target}: %{{customdata[5]:.2f}} {unit}<br>"
+            "Latitude: %{lat:.3f}<br>"
+            "Longitude: %{lon:.3f}<extra></extra>"
         ),
     ))
 
@@ -886,17 +1142,23 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         },
     )
 
-    title = (
-        f"{target} ({unit})  ·  {model_type}  ·  "
-        f"Predicted for {pred_date.strftime('%B %d, %Y')}"
+    title = f"{target} map for {pred_date.strftime('%B %d, %Y')}"
+    subtitle = (
+        f"{model_type} prediction across {len(station_df)} Iowa monitoring stations. "
+        "Hover a station marker to inspect its exact location and predicted value."
     )
-    if model_type == "Gradient Boosting":
-        title += "  ·  highest-accuracy view"
-    elif model_type == "Random Forest":
-        title += "  ·  enhanced pattern view"
+
+    hero_stats = [
+        _stat_tile("Stations", f"{len(station_df)}"),
+        _stat_tile("Target", target),
+        _stat_tile("Model", model_type),
+        _stat_tile("Date", pred_date.strftime("%b %d, %Y")),
+    ]
 
     # ── Summary stats ─────────────────────────────────
     preds = station_df["predicted"]
+    low_station = station_df.loc[preds.idxmin()]
+    high_station = station_df.loc[preds.idxmax()]
     stats = html.Div(
         style={**CARD_STYLE, "padding": "18px"},
         children=[
@@ -910,10 +1172,76 @@ def run_prediction(n_clicks, target, model_type, selected_date):
                     _stat_tile("Std Dev", f"{preds.std():.2f} {unit}"),
                 ],
             ),
+            html.Div(
+                style={"display": "grid", "gap": "10px", "marginTop": "16px"},
+                children=[
+                    _info_row("Highest predicted station", f"{high_station['MonitoringLocationName']} ({high_station['predicted']:.2f} {unit})"),
+                    _info_row("Lowest predicted station", f"{low_station['MonitoringLocationName']} ({low_station['predicted']:.2f} {unit})"),
+                    _info_row("Prediction range", f"{(preds.max() - preds.min()):.2f} {unit}"),
+                ],
+            ),
         ],
     )
 
-    return fig, status, title, stats
+    return fig, status, title, subtitle, hero_stats, stats, _performance_panel(target, model_type)
+
+
+@app.callback(
+    Output("hover-panel", "children"),
+    Input("usa-map", "hoverData"),
+    State("target-radio", "value"),
+)
+def update_hover_panel(hover_data, target):
+    if not hover_data or "points" not in hover_data or not hover_data["points"]:
+        return _hover_panel_default()
+
+    point = hover_data["points"][0]
+    curve_number = point.get("curveNumber", -1)
+    lat = point.get("lat")
+    lon = point.get("lon")
+    unit = TARGET_UNITS.get(target, "")
+
+    if curve_number == 1 and point.get("customdata"):
+        custom = point["customdata"]
+        station_name, station_id, provider, climate_station, distance_km, predicted = custom
+        return html.Div(
+            style=SIDECARD_STYLE,
+            children=[
+                html.Span("Hovered Location", style=LABEL_STYLE),
+                html.Div(station_name, style={"fontSize": "18px", "fontWeight": "700", "color": TEXT_DARK, "marginBottom": "8px"}),
+                html.Div(
+                    f"Predicted {target}: {float(predicted):.2f} {unit}" if target else "Station details",
+                    style={"fontSize": "15px", "color": ACCENT, "fontWeight": "700", "marginBottom": "10px"},
+                ),
+                _info_row("Station ID", str(station_id)),
+                _info_row("Provider", str(provider)),
+                _info_row("Climate station", str(climate_station)),
+                _info_row("Climate distance", f"{float(distance_km):.1f} km"),
+                _info_row("Latitude", f"{float(lat):.4f}"),
+                _info_row("Longitude", f"{float(lon):.4f}"),
+            ],
+        )
+
+    label = target or "value"
+    value = point.get("marker.color")
+    value_text = f"{float(value):.2f} {unit}" if value is not None and target else "Interpolated estimate"
+    return html.Div(
+        style=SIDECARD_STYLE,
+        children=[
+            html.Span("Hovered Location", style=LABEL_STYLE),
+            html.Div("Interpolated surface", style={"fontSize": "18px", "fontWeight": "700", "color": TEXT_DARK, "marginBottom": "8px"}),
+            html.Div(
+                f"Estimated {label}: {value_text}" if target else value_text,
+                style={"fontSize": "15px", "color": ACCENT, "fontWeight": "700", "marginBottom": "10px"},
+            ),
+            _info_row("Latitude", f"{float(lat):.4f}"),
+            _info_row("Longitude", f"{float(lon):.4f}"),
+            html.Div(
+                "This point comes from the interpolated map surface between monitoring stations, not from a direct station observation.",
+                style={"marginTop": "12px", "fontSize": "13px", "color": TEXT_MID, "lineHeight": "1.6"},
+            ),
+        ],
+    )
 
 
 # ─────────────────────────────────────────────────────────────
