@@ -122,6 +122,122 @@ TARGET_SHORT_NOTES = {
     "Nitrate": "Use this to inspect likely nutrient concentration hotspots across the network.",
 }
 
+
+def _target_assessment(target: str | None, value: float | int | None) -> dict[str, str]:
+    """
+    Return a short qualitative interpretation for a predicted value.
+    These labels are UI guidance only and should not be treated as a
+    regulatory determination.
+    """
+    if target is None or value is None or pd.isna(value):
+        return {
+            "label": "Unknown",
+            "detail": "No interpretation available.",
+            "color": TEXT_MID,
+        }
+
+    val = float(value)
+
+    if target == "pH":
+        if val < 6.5:
+            return {
+                "label": "Acidic",
+                "detail": "Below the common neutral-to-healthy range for many freshwater systems.",
+                "color": DANGER,
+            }
+        if val <= 8.5:
+            return {
+                "label": "Balanced",
+                "detail": "Within a common freshwater range and generally suitable for aquatic life.",
+                "color": SUCCESS,
+            }
+        return {
+            "label": "Basic",
+            "detail": "Above the common freshwater range and more alkaline than neutral.",
+            "color": "#b45309",
+        }
+
+    if target == "Water Temperature":
+        if val < 5:
+            return {
+                "label": "Very Cold",
+                "detail": "Cold-water conditions; fine for some species but stressful for others.",
+                "color": "#1d4ed8",
+            }
+        if val <= 20:
+            return {
+                "label": "Moderate",
+                "detail": "A generally favorable temperature range for many freshwater ecosystems.",
+                "color": SUCCESS,
+            }
+        if val <= 28:
+            return {
+                "label": "Warm",
+                "detail": "Warmer water can begin reducing oxygen availability and increase stress.",
+                "color": "#d97706",
+            }
+        return {
+            "label": "Very Warm",
+            "detail": "Potentially stressful for aquatic life, especially when oxygen is limited.",
+            "color": DANGER,
+        }
+
+    if target == "Dissolved Oxygen":
+        if val < 5:
+            return {
+                "label": "Low Oxygen",
+                "detail": "Below 5 mg/L and often stressful for aquatic life.",
+                "color": DANGER,
+            }
+        if val < 7:
+            return {
+                "label": "Fair",
+                "detail": "Above the minimum stress threshold, but not yet in the healthier range.",
+                "color": "#d97706",
+            }
+        if val <= 19:
+            return {
+                "label": "Healthy",
+                "detail": "Within the 7-19 mg/L range, which is generally healthy for freshwater habitats.",
+                "color": SUCCESS,
+            }
+        return {
+            "label": "Very High",
+            "detail": "Above 19 mg/L; oxygen is abundant, though extremely high values can reflect unusual conditions.",
+            "color": "#0891b2",
+        }
+
+    if target == "Nitrate":
+        if val < 1:
+            return {
+                "label": "Low",
+                "detail": "Low nitrate concentration and generally not a nutrient concern.",
+                "color": SUCCESS,
+            }
+        if val < 3:
+            return {
+                "label": "Moderate",
+                "detail": "Some nutrient presence, but not unusually elevated.",
+                "color": "#65a30d",
+            }
+        if val < 10:
+            return {
+                "label": "Elevated",
+                "detail": "Higher nitrate levels that may indicate runoff or nutrient loading.",
+                "color": "#d97706",
+            }
+        return {
+            "label": "High Concern",
+            "detail": "Strongly elevated nitrate and a clearer water-quality concern.",
+            "color": DANGER,
+        }
+
+    return {
+        "label": "Measured",
+        "detail": "Predicted value available.",
+        "color": TEXT_MID,
+    }
+
 # Major Iowa cities for reverse-geocoding interpolated hover points
 IOWA_CITIES = [
     ("Des Moines",     41.5868, -93.6250),
@@ -984,6 +1100,14 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         customdata=np.column_stack([
             np.full(len(idx), "Interpolated surface"),
             np.full(len(idx), target),
+            [
+                _target_assessment(target, value)["label"]
+                for value in flat_vals[idx]
+            ],
+            [
+                _target_assessment(target, value)["detail"]
+                for value in flat_vals[idx]
+            ],
         ]),
         marker=dict(
             size=9,
@@ -1002,6 +1126,8 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         hovertemplate=(
             f"<b>Interpolated {target}</b><br>"
             f"Estimated value: %{{marker.color:.2f}} {unit}<br>"
+            "Interpretation: %{customdata[2]}<br>"
+            "%{customdata[3]}<br>"
             "Coordinates: %{lat:.4f}°N, %{lon:.4f}°W<extra></extra>"
         ),
     ))
@@ -1014,6 +1140,14 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         station_df["climate_station_name"].fillna("Unknown climate station"),
         station_df["distance_to_climate_station_km"].fillna(0.0),
         station_df["predicted"].round(4),
+        [
+            _target_assessment(target, value)["label"]
+            for value in station_df["predicted"]
+        ],
+        [
+            _target_assessment(target, value)["detail"]
+            for value in station_df["predicted"]
+        ],
     ])
     fig.add_trace(go.Scattergeo(
         lat=station_df[LAT_COL],
@@ -1036,6 +1170,8 @@ def run_prediction(n_clicks, target, model_type, selected_date):
             "Climate station: %{customdata[3]}<br>"
             "Distance to climate station: %{customdata[4]:.1f} km<br>"
             f"Predicted {target}: %{{customdata[5]:.2f}} {unit}<br>"
+            "Interpretation: %{customdata[6]}<br>"
+            "%{customdata[7]}<br>"
             "Coordinates: %{lat:.4f}°N, %{lon:.4f}°W<extra></extra>"
         ),
     ))
@@ -1084,8 +1220,9 @@ def update_hover_panel(hover_data, target):
 
     if curve_number == 1 and point.get("customdata"):
         custom = point["customdata"]
-        station_name, station_id, provider, climate_station, distance_km, predicted = custom
+        station_name, station_id, provider, climate_station, distance_km, predicted, assessment_label, assessment_detail = custom
         pred_val = float(predicted)
+        assessment = _target_assessment(target, pred_val)
         city = _nearest_city(float(lat), float(lon)) if lat is not None and lon is not None else ""
         return html.Div(
             style=SIDECARD_STYLE,
@@ -1099,11 +1236,40 @@ def update_hover_panel(hover_data, target):
                         html.Span(unit, style={"fontSize": "14px", "color": TEXT_LIGHT}),
                     ],
                 ),
+                html.Div(
+                    assessment_label,
+                    style={
+                        "display": "inline-block",
+                        "marginTop": "10px",
+                        "padding": "4px 10px",
+                        "borderRadius": "999px",
+                        "background": "#f8fafc",
+                        "border": f"1px solid {assessment['color']}",
+                        "color": assessment["color"],
+                        "fontSize": "11px",
+                        "fontWeight": "700",
+                    },
+                ),
+                html.Div(
+                    assessment_detail,
+                    style={"fontSize": "11px", "color": TEXT_MID, "marginTop": "10px", "lineHeight": "1.5"},
+                ),
+                html.Div(
+                    [
+                        _info_row("Station ID", str(station_id)),
+                        _info_row("Provider", str(provider)),
+                        _info_row("Climate station", str(climate_station)),
+                        _info_row("Distance", f"{float(distance_km):.1f} km"),
+                    ],
+                    style={"marginTop": "10px"},
+                ),
             ],
         )
 
     value = point.get("marker.color")
     city = _nearest_city(float(lat), float(lon)) if lat is not None and lon is not None else "Iowa"
+    numeric_value = float(value) if value is not None and target else None
+    assessment = _target_assessment(target, numeric_value)
 
     return html.Div(
         style=SIDECARD_STYLE,
@@ -1113,13 +1279,31 @@ def update_hover_panel(hover_data, target):
                 style={"display": "flex", "alignItems": "baseline", "gap": "5px"},
                 children=[
                     html.Span(
-                        f"{float(value):.1f}" if value is not None and target else "—",
+                        f"{numeric_value:.1f}" if numeric_value is not None else "—",
                         style={"fontSize": "28px", "fontWeight": "700", "color": TEXT_MID, "lineHeight": "1"},
                     ),
                     html.Span(unit, style={"fontSize": "14px", "color": TEXT_LIGHT}),
                 ],
             ),
             html.Div("estimated", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginTop": "4px"}),
+            html.Div(
+                assessment["label"],
+                style={
+                    "display": "inline-block",
+                    "marginTop": "10px",
+                    "padding": "4px 10px",
+                    "borderRadius": "999px",
+                    "background": "#f8fafc",
+                    "border": f"1px solid {assessment['color']}",
+                    "color": assessment["color"],
+                    "fontSize": "11px",
+                    "fontWeight": "700",
+                },
+            ),
+            html.Div(
+                assessment["detail"],
+                style={"fontSize": "11px", "color": TEXT_MID, "marginTop": "10px", "lineHeight": "1.5"},
+            ),
         ],
     )
 
