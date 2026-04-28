@@ -159,7 +159,7 @@ Then open your browser and go to:
 http://127.0.0.1:8050
 ```
 
-The app loads all eight pre-trained `.pkl` models from `src/modeling/` at startup — no retraining needed. A green status badge in the sidebar confirms how many models loaded successfully.
+The app loads all twelve pre-trained `.pkl` models from `src/modeling/` at startup — no retraining needed. A green status badge in the sidebar confirms how many models loaded successfully.
 
 ---
 
@@ -169,7 +169,7 @@ The dashboard is organized into a left control panel and a right map panel.
 
 **Left Panel — Controls:**
 - **Target Variable** — choose one of four water quality parameters to predict (Water Temperature, pH, Dissolved Oxygen, Nitrate)
-- **Prediction Model** — switch between Linear Regression and Random Forest
+- **Prediction Model** — switch between Linear Regression, Random Forest, and Gradient Boosting
 - **Prediction Date** — pick any date using the date picker, or use the quick-select buttons (Today, In 1 week, In 2 weeks, In 1 month, In 6 months, In 1 year)
 - **Run Prediction** — triggers inference across all monitoring stations
 
@@ -215,13 +215,13 @@ The final modeling dataset `data/tabular/merged/epa-climate-merged.csv` contains
 
 ### Stage 3 — Modeling
 
-`src/modeling/train_sklearn_models.py` trains two model types (Linear Regression, Random Forest) for each of the four targets and saves them as `.pkl` files:
+`src/modeling/train_sklearn_models.py` trains three model types (Linear Regression, Random Forest, Gradient Boosting) for each of the four targets and saves them as `.pkl` files:
 
 ```
-lr_water_temperature.pkl    rf_water_temperature.pkl
-lr_ph.pkl                   rf_ph.pkl
-lr_dissolved_oxygen.pkl     rf_dissolved_oxygen.pkl
-lr_nitrate.pkl              rf_nitrate.pkl
+lr_water_temperature.pkl    rf_water_temperature.pkl    gb_water_temperature.pkl
+lr_ph.pkl                   rf_ph.pkl                   gb_ph.pkl
+lr_dissolved_oxygen.pkl     rf_dissolved_oxygen.pkl     gb_dissolved_oxygen.pkl
+lr_nitrate.pkl              rf_nitrate.pkl              gb_nitrate.pkl
 ```
 
 ---
@@ -230,7 +230,7 @@ lr_nitrate.pkl              rf_nitrate.pkl
 
 ### Features
 
-Both model types are trained on the same ten climate-derived features:
+All three model types are trained on the same twelve inference features:
 
 | Feature | Description |
 |---|---|
@@ -244,6 +244,8 @@ Both model types are trained on the same ten climate-derived features:
 | `snow` | Daily snowfall (inches) |
 | `snowd` | Snow depth on ground (inches) |
 | `distance_to_climate_station_km` | Distance from EPA station to nearest climate station |
+| `LatitudeMeasure` | EPA monitoring station latitude |
+| `LongitudeMeasure` | EPA monitoring station longitude |
 
 ### Model Architecture
 
@@ -323,4 +325,4 @@ The repository includes pre-generated evaluation outputs from the numpy linear r
 
 ## Status
 
-The project is fully functional. Data is cleaned and merged, all eight trained models are saved in the repository, and the dashboard can be launched locally with a single command for interactive prediction and visualization across Iowa's water monitoring network.
+The project is fully functional. Data is cleaned and merged, all twelve trained models are saved in the repository, and the dashboard can be launched locally with a single command for interactive prediction and visualization across Iowa's water monitoring network.
