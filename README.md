@@ -251,7 +251,7 @@ All three model types are trained on the same twelve inference features:
 ### Model Architecture
 
 Each saved model is a scikit-learn `Pipeline` that keeps runtime inference
-compatible with the same ten raw climate features while refining them during
+compatible with the same raw input features while refining them during
 training:
 
 1. `SimpleImputer(strategy="median")` — fills missing climate values
