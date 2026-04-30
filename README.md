@@ -118,7 +118,7 @@ Each EPA monitoring station is spatially matched to its nearest ISU climate stat
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/psXp00/Water-Quality-Prediction.git
+git clone https://github.com/NullPranaya/Water-Quality-Prediction.git
 cd Water-Quality-Prediction
 ```
 
