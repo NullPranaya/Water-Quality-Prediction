@@ -1,9 +1,9 @@
 # Water Quality Prediction
 
-An end-to-end machine learning project for predicting water quality conditions across Iowa EPA monitoring stations. The project combines real water quality measurements, climate records, and agricultural data into a unified modeling pipeline, then serves predictions through an interactive Dash dashboard with map-based visualization.
+An end-to-end machine learning project for forecasting water quality conditions at Iowa EPA monitoring stations. It combines water quality measurements, climate records, and agricultural data into a unified modeling pipeline, then serves predictions through an interactive Dash dashboard with map-based visualization.
 
 This repository is maintained as a completed project snapshot, with pre-trained artifacts and processed datasets included for reproducibility.
-It is set up so the project can be inspected or run without rebuilding the entire pipeline first.
+It is organized so the project can be reviewed or run without rebuilding the full pipeline first.
 
 ---
 
@@ -25,7 +25,7 @@ It is set up so the project can be inspected or run without rebuilding the entir
 
 ## Project Overview
 
-This project answers a practical question: given climate conditions on any date, what water quality can we expect at monitoring stations across Iowa?
+This project focuses on a practical question: given climate conditions on a specific date, what water quality should we expect at monitoring stations across Iowa?
 
 The pipeline pulls together three real-world datasets — EPA water quality measurements, ISU climate station records, and USDA agricultural data — cleans and merges them, and trains scikit-learn regression models for four water quality targets:
 
@@ -36,7 +36,7 @@ The pipeline pulls together three real-world datasets — EPA water quality meas
 | Dissolved Oxygen | mg/L |
 | Nitrate | mg/L |
 
-Predictions are served through a locally-runnable Dash app. The user picks a target, a model type, and a date — the app runs inference across all monitoring stations and renders a spatially interpolated map of predicted values across Iowa.
+Predictions are delivered through a locally runnable Dash app. The user selects a target, a model type, and a date, and the app runs inference across all monitoring stations before rendering a spatially interpolated map of predicted values across Iowa.
 
 Pre-trained model files are included in the repository so the dashboard works immediately without retraining.
 
@@ -148,7 +148,7 @@ This installs everything needed: Dash, Plotly, pandas, NumPy, SciPy, scikit-lear
 
 ## How to Run the App
 
-With your virtual environment activated and dependencies installed, run from the project root:
+With your virtual environment activated and dependencies installed, run the app from the project root:
 
 ```bash
 python app.py
@@ -326,4 +326,4 @@ The repository includes pre-generated evaluation outputs from the numpy linear r
 
 ## Status
 
-The project is fully functional. Data is cleaned and merged, all twelve trained models are saved in the repository, and the dashboard can be launched locally with a single command for interactive prediction and visualization across Iowa's water monitoring network.
+The project is fully functional. The data has been cleaned and merged, all twelve trained models are stored in the repository, and the dashboard can be launched locally with a single command for interactive prediction and visualization across Iowa's water monitoring network.
