@@ -31,7 +31,9 @@ import os
 import pickle
 import warnings
 from datetime import date, timedelta
+from functools import lru_cache
 from pathlib import Path
+from typing import Dict, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -123,7 +125,7 @@ TARGET_SHORT_NOTES = {
 }
 
 
-def _target_assessment(target: str | None, value: float | int | None) -> dict[str, str]:
+def _target_assessment(target: Optional[str], value: Optional[Union[float, int]]) -> Dict[str, str]:
     """
     Return a short qualitative interpretation for a predicted value.
     These labels are UI guidance only and should not be treated as a
@@ -417,7 +419,7 @@ def predict_at_stations(target: str, model_type: str, pred_date: date) -> pd.Dat
     mdl = MODELS[target][model_type]       # already-fitted pipeline from pkl
 
     result = STATIONS.copy()
-    result["predicted"] = mdl.predict(X)  # inference only — no fit() call
+    result["predicted"] = mdl.predict(X.to_numpy())  # inference only — no fit() call
     return result
 
 
@@ -493,6 +495,15 @@ DIVIDER_STYLE = {
     "background": BORDER,
     "margin": "0",
 }
+
+STREAK_WEEKS = 14
+STREAK_LEVELS = [
+    "#ebedf0",
+    "#d9f3ea",
+    "#9adac2",
+    "#49b88d",
+    "#1f6f55",
+]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -631,13 +642,13 @@ def _info_row(label: str, value: str) -> html.Div:
     )
 
 
-def _fmt_metric(value: float | int | None, suffix: str = "", digits: int = 3) -> str:
+def _fmt_metric(value: Optional[Union[float, int]], suffix: str = "", digits: int = 3) -> str:
     if value is None or pd.isna(value):
         return "N/A"
     return f"{value:.{digits}f}{suffix}"
 
 
-def _boost_display_score(target: str | None, value: float | int | None) -> float | None:
+def _boost_display_score(target: Optional[str], value: Optional[Union[float, int]]) -> Optional[float]:
     """
     Apply a modest target-specific UI-only uplift for harder targets
     without changing saved metrics or model behavior.
@@ -654,7 +665,7 @@ def _boost_display_score(target: str | None, value: float | int | None) -> float
     return clipped
 
 
-def _get_metric_row(target: str | None, model_type: str | None) -> pd.Series | None:
+def _get_metric_row(target: Optional[str], model_type: Optional[str]) -> Optional[pd.Series]:
     if not target or not model_type or MODEL_METRICS.empty:
         return None
 
@@ -667,7 +678,7 @@ def _get_metric_row(target: str | None, model_type: str | None) -> pd.Series | N
     return match.iloc[0]
 
 
-def _performance_panel(target: str | None, model_type: str | None) -> html.Div:
+def _performance_panel(target: Optional[str], model_type: Optional[str]) -> html.Div:
     metric_row = _get_metric_row(target, model_type)
 
     if metric_row is None:
@@ -717,6 +728,19 @@ def _summary_panel_default() -> html.Div:
     )
 
 
+def _streak_panel_default() -> html.Div:
+    return html.Div(
+        style=SIDECARD_STYLE,
+        children=[
+            html.Div("Streak view", style={"fontSize": "12px", "color": TEXT_DARK, "fontWeight": "600", "marginBottom": "6px"}),
+            html.Div(
+                "Run a prediction to unlock the recent-pattern heatmap.",
+                style={"fontSize": "12px", "color": TEXT_LIGHT, "lineHeight": "1.6"},
+            ),
+        ],
+    )
+
+
 def _available_targets() -> list:
     """
     Return radio options for all targets.
@@ -744,6 +768,171 @@ def _available_model_types(target) -> list:
             "disabled": (target is not None and not available),
         })
     return options
+
+
+def _build_feature_matrix_for_day_of_year(day_of_year: int) -> pd.DataFrame:
+    """
+    Construct the inference matrix for a specific day-of-year.
+    Only the seasonal signal changes; station-level features stay fixed.
+    """
+    X = STATIONS[FEATURE_COLS].copy()
+    X["doy"] = day_of_year
+
+    for col in FEATURE_COLS:
+        if X[col].isna().any():
+            X[col] = X[col].fillna(X[col].median())
+
+    return X[FEATURE_COLS]
+
+
+@lru_cache(maxsize=2048)
+def _statewide_mean_prediction(target: str, model_type: str, day_of_year: int) -> float:
+    """Cache statewide mean predictions for streak rendering."""
+    X = _build_feature_matrix_for_day_of_year(day_of_year)
+    preds = MODELS[target][model_type].predict(X.to_numpy())
+    return float(np.mean(preds))
+
+
+def _streak_level(value: float, low: float, high: float) -> int:
+    if high <= low:
+        return 2
+
+    scaled = (value - low) / (high - low)
+    if scaled < 0.2:
+        return 0
+    if scaled < 0.4:
+        return 1
+    if scaled < 0.6:
+        return 2
+    if scaled < 0.8:
+        return 3
+    return 4
+
+
+def _streak_panel(target: str, model_type: str, pred_date: date) -> html.Div:
+    """Render a GitHub-style recent prediction heatmap."""
+    days_until_saturday = (5 - pred_date.weekday()) % 7
+    grid_end = pred_date + timedelta(days=days_until_saturday)
+    grid_start = grid_end - timedelta(days=(STREAK_WEEKS * 7) - 1)
+
+    all_dates = [grid_start + timedelta(days=offset) for offset in range(STREAK_WEEKS * 7)]
+    historic_dates = [d for d in all_dates if d <= pred_date]
+    values = [
+        _statewide_mean_prediction(target, model_type, d.timetuple().tm_yday)
+        for d in historic_dates
+    ]
+
+    window_low = float(min(values)) if values else 0.0
+    window_high = float(max(values)) if values else 1.0
+    current_value = values[-1] if values else None
+    current_assessment = _target_assessment(target, current_value)
+    window_mean = float(np.mean(values)) if values else None
+    peak_value = float(max(values)) if values else None
+    unit = TARGET_UNITS.get(target, "")
+
+    weeks = [all_dates[index:index + 7] for index in range(0, len(all_dates), 7)]
+    month_labels = []
+    previous_month = None
+    for week in weeks:
+        month = week[0].strftime("%b")
+        month_labels.append(month if month != previous_month else "")
+        previous_month = month
+
+    weekday_labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    week_columns = []
+    for week in weeks:
+        cells = []
+        for cell_date in week:
+            if cell_date > pred_date:
+                level = 0
+                background = "#f8fafc"
+                border = "1px solid rgba(15, 23, 42, 0.05)"
+                title = f"{cell_date.strftime('%b %d, %Y')}: upcoming"
+            else:
+                value = _statewide_mean_prediction(target, model_type, cell_date.timetuple().tm_yday)
+                level = _streak_level(value, window_low, window_high)
+                background = STREAK_LEVELS[level]
+                border = "1px solid rgba(15, 23, 42, 0.06)"
+                title = f"{cell_date.strftime('%b %d, %Y')}: {value:.2f} {unit}"
+
+            cells.append(
+                html.Div(
+                    className="streak-cell",
+                    title=title,
+                    style={"background": background, "border": border},
+                )
+            )
+
+        week_columns.append(html.Div(className="streak-week", children=cells))
+
+    return html.Div(
+        style=SIDECARD_STYLE,
+        children=[
+            html.Div(
+                style={"display": "flex", "justifyContent": "space-between", "alignItems": "flex-start", "gap": "12px", "marginBottom": "14px"},
+                children=[
+                    html.Div(
+                        children=[
+                            html.Div("Streak view", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginBottom": "8px"}),
+                            html.Div(
+                                style={"display": "flex", "alignItems": "baseline", "gap": "6px"},
+                                children=[
+                                    html.Span(f"{current_value:.1f}" if current_value is not None else "—", style={"fontSize": "28px", "fontWeight": "700", "color": TEXT_DARK, "lineHeight": "1"}),
+                                    html.Span(unit, style={"fontSize": "13px", "color": TEXT_LIGHT}),
+                                ],
+                            ),
+                            html.Div(
+                                current_assessment["label"],
+                                style={"fontSize": "11px", "fontWeight": "700", "color": current_assessment["color"], "marginTop": "8px"},
+                            ),
+                        ],
+                    ),
+                    html.Div(
+                        style={"minWidth": "96px"},
+                        children=[
+                            _info_row(f"{STREAK_WEEKS}-wk avg", _fmt_metric(window_mean, f" {unit}", digits=1)),
+                            _info_row("Peak", _fmt_metric(peak_value, f" {unit}", digits=1)),
+                        ],
+                    ),
+                ],
+            ),
+            html.Div(
+                f"{STREAK_WEEKS} weeks of statewide average predictions ending {pred_date.strftime('%b %d, %Y')}",
+                style={"fontSize": "11px", "color": TEXT_LIGHT, "lineHeight": "1.5", "marginBottom": "12px"},
+            ),
+            html.Div(className="streak-months", children=[
+                html.Div(className="streak-month-spacer"),
+                html.Div(className="streak-month-labels", children=[
+                    html.Div(label, className="streak-month-label")
+                    for label in month_labels
+                ]),
+            ]),
+            html.Div(
+                className="streak-chart",
+                children=[
+                    html.Div(
+                        className="streak-weekdays",
+                        children=[html.Div(day, className="streak-weekday") for day in weekday_labels],
+                    ),
+                    html.Div(className="streak-heatmap", children=week_columns),
+                ],
+            ),
+            html.Div(
+                className="streak-legend",
+                children=[
+                    html.Span("Lower", className="streak-legend-label"),
+                    *[
+                        html.Div(
+                            className="streak-legend-chip",
+                            style={"background": color},
+                        )
+                        for color in STREAK_LEVELS
+                    ],
+                    html.Span("Higher", className="streak-legend-label"),
+                ],
+            ),
+        ],
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -940,6 +1129,8 @@ app.layout = html.Div(
                                     children=[
                                         html.Div(id="hover-panel",       children=_hover_panel_default()),
                                         html.Div(style=DIVIDER_STYLE),
+                                        html.Div(id="streak-panel",      children=_streak_panel_default()),
+                                        html.Div(style=DIVIDER_STYLE),
                                         html.Div(id="stats-panel",       children=_summary_panel_default()),
                                         html.Div(style=DIVIDER_STYLE),
                                         html.Div(id="performance-panel", children=_performance_panel(None, None)),
@@ -1020,6 +1211,7 @@ def update_model_helper(model_type):
     Output("status-msg",  "children"),
     Output("map-title",   "children"),
     Output("map-subtitle", "children"),
+    Output("streak-panel", "children"),
     Output("stats-panel", "children"),
     Output("performance-panel", "children"),
     Input("predict-btn",  "n_clicks"),
@@ -1058,6 +1250,7 @@ def run_prediction(n_clicks, target, model_type, selected_date):
             msg,
             no_update,
             no_update,
+            _streak_panel_default(),
             no_update,
             _performance_panel(target, model_type),
         )
@@ -1200,7 +1393,7 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         ],
     )
 
-    return fig, status, title, subtitle, stats, _performance_panel(target, model_type)
+    return fig, status, title, subtitle, _streak_panel(target, model_type, pred_date), stats, _performance_panel(target, model_type)
 
 
 @app.callback(
