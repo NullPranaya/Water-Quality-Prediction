@@ -12,6 +12,7 @@ from __future__ import annotations
 import pickle
 import sys
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -84,8 +85,8 @@ def symmetric_mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(safe) * 100.0)
 
 
-def make_preprocessor(include_scaler: bool) -> list[tuple[str, object]]:
-    steps: list[tuple[str, object]] = [
+def make_preprocessor(include_scaler: bool) -> List[Tuple[str, object]]:
+    steps: List[Tuple[str, object]] = [
         ("imputer", SimpleImputer(strategy="median")),
         ("feature_engineering", FunctionTransformer(add_derived_features, validate=False)),
     ]
@@ -175,7 +176,7 @@ def wrap_for_target(target_label: str, pipeline: Pipeline) -> object:
     return pipeline
 
 
-def evaluate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+def evaluate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     return {
         "r2": float(r2_score(y_true, y_pred)),
         "rmse": float(mean_squared_error(y_true, y_pred) ** 0.5),
@@ -191,8 +192,8 @@ def load_dataset() -> pd.DataFrame:
 def prepare_target_frame(
     df: pd.DataFrame,
     target_col: str,
-    valid_range: tuple[float, float],
-) -> tuple[pd.DataFrame, int, int] | None:
+    valid_range: Tuple[float, float],
+) -> Optional[Tuple[pd.DataFrame, int, int]]:
     needed = FEATURE_COLS + [target_col]
     target_df = df[needed].dropna(subset=[target_col]).copy()
     raw_rows = len(target_df)
@@ -211,7 +212,7 @@ def cross_validated_r2(
     estimator: object,
     X_train: np.ndarray,
     y_train: np.ndarray,
-) -> tuple[float, float]:
+) -> Tuple[float, float]:
     cv = KFold(n_splits=CV_SPLITS, shuffle=True, random_state=RANDOM_STATE)
     cv_scores = cross_val_score(
         estimator,
@@ -228,7 +229,7 @@ def train_and_save() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
     dataset = load_dataset()
-    metrics_rows: list[dict[str, float | int | str | bool]] = []
+    metrics_rows: List[Dict[str, Union[float, int, str, bool]]] = []
 
     for target_label, config in TARGETS.items():
         print(f"\n--- {target_label} ({config['column']}) ---")

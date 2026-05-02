@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -90,10 +91,10 @@ def predict(coefficients: np.ndarray, x_values: np.ndarray) -> np.ndarray:
 
 def select_targets(
     df: pd.DataFrame,
-    explicit_targets: list[str] | None,
+    explicit_targets: Optional[List[str]],
     min_samples: int,
     top_n: int,
-) -> list[str]:
+) -> List[str]:
     print("Available columns:", df.columns.tolist())
     complete_rows = df.dropna(subset=PREDICTOR_COLUMNS + ["ResultMeasureValue"])
     counts = complete_rows["CharacteristicName"].value_counts()
@@ -114,7 +115,7 @@ def train_for_target(
     min_samples: int,
     test_size: float,
     seed: int,
-) -> tuple[dict[str, float | int | str], list[dict[str, float | str]]] | None:
+) -> Optional[Tuple[Dict[str, Union[float, int, str]], List[Dict[str, Union[float, str]]]]]:
     target_df = (
         df.loc[df["CharacteristicName"] == target_name, PREDICTOR_COLUMNS + ["ResultMeasureValue"]]
         .dropna()
