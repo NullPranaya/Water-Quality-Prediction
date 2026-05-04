@@ -5,6 +5,8 @@ An end-to-end machine learning project for forecasting water quality conditions 
 This repository is maintained as a completed project snapshot, with pre-trained artifacts and processed datasets included for reproducibility.
 It is organized so the project can be reviewed or run without rebuilding the full pipeline first.
 
+Small documentation-only updates may still be made over time to keep the repository presentation current.
+
 ---
 
 ## Table of Contents
