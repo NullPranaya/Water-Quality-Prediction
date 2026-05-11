@@ -81,6 +81,7 @@ Each EPA monitoring station is spatially matched to its nearest ISU climate stat
 │   │   │   ├── epa-merged.csv                # EPA stations + measurements joined
 │   │   │   └── epa-to-climate-station-map.csv # Nearest-station spatial map
 │   │   └── modeling/               # Model evaluation outputs
+│   │       ├── sklearn_model_metrics.csv
 │   │       ├── multiple_linear_regression_metrics.csv
 │   │       └── multiple_linear_regression_coefficients.csv
 │   ├── images/
@@ -103,12 +104,16 @@ Each EPA monitoring station is spatially matched to its nearest ISU climate stat
         ├── multiple_linear_regression.py     # Standalone MLR script (numpy only)
         ├── lr_water_temperature.pkl          # Pre-trained Linear Regression
         ├── rf_water_temperature.pkl          # Pre-trained Random Forest
+        ├── gb_water_temperature.pkl          # Pre-trained Gradient Boosting
         ├── lr_ph.pkl
         ├── rf_ph.pkl
+        ├── gb_ph.pkl
         ├── lr_dissolved_oxygen.pkl
         ├── rf_dissolved_oxygen.pkl
+        ├── gb_dissolved_oxygen.pkl
         ├── lr_nitrate.pkl
-        └── rf_nitrate.pkl
+        ├── rf_nitrate.pkl
+        └── gb_nitrate.pkl
 ```
 
 ---
@@ -310,8 +315,9 @@ Optional arguments:
 
 ## Additional Modeling Outputs
 
-The repository includes pre-generated evaluation outputs from the numpy linear regression:
+The repository includes pre-generated evaluation outputs for both training paths:
 
+- [`data/tabular/modeling/sklearn_model_metrics.csv`](data/tabular/modeling/sklearn_model_metrics.csv) — held-out metrics for the saved scikit-learn dashboard models
 - [`data/tabular/modeling/multiple_linear_regression_metrics.csv`](data/tabular/modeling/multiple_linear_regression_metrics.csv) — R², RMSE, MAE, sample counts per target
 - [`data/tabular/modeling/multiple_linear_regression_coefficients.csv`](data/tabular/modeling/multiple_linear_regression_coefficients.csv) — intercept and feature coefficients per target
 
