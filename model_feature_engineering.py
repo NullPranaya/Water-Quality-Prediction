@@ -9,6 +9,11 @@ def add_derived_features(X: np.ndarray) -> np.ndarray:
     keeping the raw input contract unchanged.
     """
     X = np.asarray(X, dtype=float)
+    if X.ndim != 2:
+        raise ValueError("Expected a 2D feature matrix.")
+    if X.shape[1] < 10:
+        raise ValueError("Expected at least 10 base feature columns.")
+
     doy = X[:, 0]
     season_angle = 2.0 * np.pi * doy / 366.0
     season_angle_2 = 2.0 * season_angle

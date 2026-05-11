@@ -55,6 +55,19 @@ class DashboardSmokeTests(unittest.TestCase):
         for component in (streak, stats, performance):
             self.assertTrue(hasattr(component, "to_plotly_json"))
 
+    def test_build_feature_matrix_preserves_feature_contract(self) -> None:
+        feature_matrix = app.build_feature_matrix(app.date(2026, 2, 14))
+
+        self.assertEqual(feature_matrix.columns.tolist(), app.FEATURE_COLS)
+        self.assertTrue((feature_matrix["doy"] == 45).all())
+        self.assertEqual(len(feature_matrix), len(app.STATIONS))
+
+    def test_target_assessment_missing_value(self) -> None:
+        assessment = app._target_assessment("Nitrate", None)
+
+        self.assertEqual(assessment["label"], "Unknown")
+        self.assertEqual(assessment["color"], app.TEXT_MID)
+
 
 if __name__ == "__main__":
     unittest.main()
