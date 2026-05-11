@@ -49,9 +49,10 @@ warnings.filterwarnings("ignore")
 # ─────────────────────────────────────────────────────────────
 # CONFIGURATION  ← edit these paths to match your server layout
 # ─────────────────────────────────────────────────────────────
-DATA_FILE_PATH = "./data/tabular/merged/epa-climate-merged.csv"
-MODEL_DIR      = "./src/modeling"               # folder containing the .pkl files
-METRICS_PATH   = "./data/tabular/modeling/sklearn_model_metrics.csv"
+BASE_DIR = Path(__file__).resolve().parent
+DATA_FILE_PATH = BASE_DIR / "data/tabular/merged/epa-climate-merged.csv"
+MODEL_DIR = BASE_DIR / "src/modeling"           # folder containing the .pkl files
+METRICS_PATH = BASE_DIR / "data/tabular/modeling/sklearn_model_metrics.csv"
 
 # Column names in the CSV
 DATE_COL = "ActivityStartDateTime"
@@ -314,7 +315,7 @@ def load_models() -> dict:
     Missing files are skipped with a warning; the app still starts.
     """
     models = {target: {} for target in TARGET_COLS}
-    model_dir = Path(MODEL_DIR)
+    model_dir = MODEL_DIR
 
     for target_label, stem in TARGET_STEMS.items():
         for model_label, prefix in MODEL_PREFIXES.items():
@@ -334,7 +335,7 @@ def load_models() -> dict:
 
 def load_model_metrics() -> pd.DataFrame:
     """Load saved training metrics for display in the dashboard."""
-    metrics_path = Path(METRICS_PATH)
+    metrics_path = METRICS_PATH
     if not metrics_path.exists():
         print(f"[WARNING] Metrics file not found: {metrics_path}")
         return pd.DataFrame()

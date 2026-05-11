@@ -153,7 +153,7 @@ This installs everything needed: Dash, Plotly, pandas, NumPy, SciPy, scikit-lear
 With your virtual environment activated and dependencies installed, run the app from the project root:
 
 ```bash
-python app.py
+python3 app.py
 ```
 
 Then open your browser and go to:
@@ -163,6 +163,12 @@ http://127.0.0.1:8050
 ```
 
 The app loads all twelve pre-trained `.pkl` models from `src/modeling/` at startup — no retraining needed. A green status badge in the sidebar confirms how many models loaded successfully.
+
+To run the lightweight regression tests:
+
+```bash
+./venv/bin/python -m unittest test_app.py test_model_feature_engineering.py
+```
 
 ---
 
