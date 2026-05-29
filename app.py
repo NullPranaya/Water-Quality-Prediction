@@ -115,7 +115,7 @@ TARGET_COLORSCALES = {
 MODEL_DESCRIPTIONS = {
     "Gradient Boosting": "Highest-accuracy tree ensemble with stronger seasonal and nonlinear pattern capture.",
     "Random Forest": "Robust ensemble model with richer nonlinear behavior and stable predictions across stations.",
-    "Linear Regression": "Fast baseline model with simpler, more linear behavior.",
+    "Linear Regression": "Fast baseline model with simpler, interpretable behavior.",
 }
 
 TARGET_SHORT_NOTES = {

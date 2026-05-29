@@ -20,6 +20,7 @@ class FeatureEngineeringTests(unittest.TestCase):
         engineered = add_derived_features(base)
 
         self.assertEqual(engineered.shape, (1, 26))
+        self.assertEqual(engineered.shape[1] - base.shape[1], 14)
         np.testing.assert_allclose(engineered[:, :12], base)
 
 
