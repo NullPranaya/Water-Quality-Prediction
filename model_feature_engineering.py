@@ -14,8 +14,9 @@ def add_derived_features(X: np.ndarray) -> np.ndarray:
     if X.shape[1] < 10:
         raise ValueError("Expected at least 10 base feature columns.")
 
+    DAYS_IN_YEAR = 366.0
     doy = X[:, 0]
-    season_angle = 2.0 * np.pi * doy / 366.0
+    season_angle = 2.0 * np.pi * doy / DAYS_IN_YEAR
     season_angle_2 = 2.0 * season_angle
     high_f = X[:, 2]
     high_c = X[:, 3]
