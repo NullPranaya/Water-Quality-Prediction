@@ -6,6 +6,7 @@ This repository is maintained as a completed project snapshot, with pre-trained 
 It is organized so the project can be reviewed or run without rebuilding the full pipeline first.
 
 Small documentation-only updates may still be made over time to keep the repository presentation current.
+The included model artifacts and processed tables are intended to make local review quick after dependencies are installed.
 
 ---
 
