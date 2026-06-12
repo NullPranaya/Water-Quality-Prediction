@@ -1,6 +1,8 @@
 import os
 import unittest
+from unittest.mock import patch
 
+import pandas as pd
 import plotly.graph_objects as go
 
 os.environ.setdefault("LOKY_MAX_CPU_COUNT", "1")
@@ -92,6 +94,11 @@ class DashboardSmokeTests(unittest.TestCase):
 
         self.assertEqual(assessment["label"], "Unknown")
         self.assertEqual(assessment["color"], app.TEXT_MID)
+
+    def test_metric_lookup_handles_missing_columns(self) -> None:
+        with patch.object(app, "MODEL_METRICS", pd.DataFrame({"target": ["pH"]})):
+            self.assertIsNone(app._get_metric_row("pH", "Gradient Boosting"))
+            self.assertTrue(hasattr(app._performance_panel("pH", "Gradient Boosting"), "to_plotly_json"))
 
 
 if __name__ == "__main__":

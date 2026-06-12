@@ -669,6 +669,8 @@ def _boost_display_score(target: Optional[str], value: Optional[Union[float, int
 def _get_metric_row(target: Optional[str], model_type: Optional[str]) -> Optional[pd.Series]:
     if not target or not model_type or MODEL_METRICS.empty:
         return None
+    if not {"target", "model"}.issubset(MODEL_METRICS.columns):
+        return None
 
     match = MODEL_METRICS[
         (MODEL_METRICS["target"] == target) &
