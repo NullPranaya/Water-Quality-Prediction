@@ -55,6 +55,31 @@ class DashboardSmokeTests(unittest.TestCase):
         for component in (streak, stats, performance):
             self.assertTrue(hasattr(component, "to_plotly_json"))
 
+    def test_prediction_rejects_invalid_date_without_crashing(self) -> None:
+        target, model_type = self._first_available_selection()
+        fig, status, title, subtitle, streak, stats, performance = app.run_prediction(
+            1,
+            target,
+            model_type,
+            "not-a-date",
+        )
+
+        self.assertIsInstance(fig, go.Figure)
+        self.assertIn("a valid prediction date", status.children)
+        self.assertIs(title, app.no_update)
+        self.assertIs(subtitle, app.no_update)
+
+        for component in (streak, performance):
+            self.assertTrue(hasattr(component, "to_plotly_json"))
+
+    def test_model_options_fall_back_to_available_model(self) -> None:
+        target, current_model = self._first_available_selection()
+        options, selected = app.update_model_options(target, "Unavailable Model")
+        available = [option["value"] for option in options if not option.get("disabled")]
+
+        self.assertIn(current_model, available)
+        self.assertIn(selected, available)
+
     def test_build_feature_matrix_preserves_feature_contract(self) -> None:
         feature_matrix = app.build_feature_matrix(app.date(2026, 2, 14))
 

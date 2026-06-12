@@ -771,6 +771,17 @@ def _available_model_types(target) -> list:
     return options
 
 
+def _parse_prediction_date(selected_date: Optional[str]) -> tuple[Optional[date], Optional[str]]:
+    """Return a parsed prediction date and a user-facing validation error."""
+    if not selected_date:
+        return None, "a prediction date"
+
+    try:
+        return date.fromisoformat(selected_date), None
+    except (TypeError, ValueError):
+        return None, "a valid prediction date"
+
+
 def _build_feature_matrix_for_day_of_year(day_of_year: int) -> pd.DataFrame:
     """
     Construct the inference matrix for a specific day-of-year.
@@ -1236,8 +1247,9 @@ def run_prediction(n_clicks, target, model_type, selected_date):
     errors = []
     if not target:
         errors.append("a target variable")
-    if not selected_date:
-        errors.append("a prediction date")
+    pred_date, date_error = _parse_prediction_date(selected_date)
+    if date_error:
+        errors.append(date_error)
     if target and not MODELS.get(target, {}).get(model_type):
         errors.append(f"a loaded model for '{target} / {model_type}'")
 
@@ -1257,7 +1269,6 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         )
 
     # ── Predict ──────────────────────────────────────
-    pred_date  = date.fromisoformat(selected_date)
     station_df = predict_at_stations(target, model_type, pred_date)
 
     # ── Interpolate to grid ──────────────────────────
