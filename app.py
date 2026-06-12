@@ -401,11 +401,7 @@ def build_feature_matrix(pred_date: date) -> pd.DataFrame:
 
     # Impute any remaining NaNs with column medians
     # (same strategy used during training to avoid data leakage issues)
-    for col in FEATURE_COLS:
-        if X[col].isna().any():
-            X[col] = X[col].fillna(X[col].median())
-
-    return X[FEATURE_COLS]   # enforce column order contract
+    return _impute_feature_matrix(X)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -784,6 +780,17 @@ def _parse_prediction_date(selected_date: Optional[str]) -> tuple[Optional[date]
         return None, "a valid prediction date"
 
 
+def _impute_feature_matrix(X: pd.DataFrame) -> pd.DataFrame:
+    """Fill missing inference features with medians and use zero if a column is all missing."""
+    for col in FEATURE_COLS:
+        if X[col].isna().any():
+            median = X[col].median()
+            fill_value = 0.0 if pd.isna(median) else median
+            X[col] = X[col].fillna(fill_value)
+
+    return X[FEATURE_COLS]
+
+
 def _build_feature_matrix_for_day_of_year(day_of_year: int) -> pd.DataFrame:
     """
     Construct the inference matrix for a specific day-of-year.
@@ -792,11 +799,7 @@ def _build_feature_matrix_for_day_of_year(day_of_year: int) -> pd.DataFrame:
     X = STATIONS[FEATURE_COLS].copy()
     X["doy"] = day_of_year
 
-    for col in FEATURE_COLS:
-        if X[col].isna().any():
-            X[col] = X[col].fillna(X[col].median())
-
-    return X[FEATURE_COLS]
+    return _impute_feature_matrix(X)
 
 
 @lru_cache(maxsize=2048)

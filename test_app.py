@@ -2,6 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -88,6 +89,16 @@ class DashboardSmokeTests(unittest.TestCase):
         self.assertEqual(feature_matrix.columns.tolist(), app.FEATURE_COLS)
         self.assertTrue((feature_matrix["doy"] == 45).all())
         self.assertEqual(len(feature_matrix), len(app.STATIONS))
+
+    def test_build_feature_matrix_fills_all_missing_feature_column(self) -> None:
+        stations = app.STATIONS.copy()
+        stations["precip"] = np.nan
+
+        with patch.object(app, "STATIONS", stations):
+            feature_matrix = app.build_feature_matrix(app.date(2026, 2, 14))
+
+        self.assertFalse(feature_matrix.isna().any().any())
+        self.assertTrue((feature_matrix["precip"] == 0.0).all())
 
     def test_target_assessment_missing_value(self) -> None:
         assessment = app._target_assessment("Nitrate", None)
