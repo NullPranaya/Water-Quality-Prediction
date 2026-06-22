@@ -27,34 +27,143 @@ Small documentation-only updates may still be made over time to keep the reposit
 
 ## Project Overview
 
-This project focuses on a practical question: given climate conditions on a specific date, what water quality should we expect at monitoring stations across Iowa?
+This project enables predictive water quality modeling and analysis across Iowa using a comprehensive, multi-source dataset. The core application answers: **given climate conditions on a specific date, what water quality should we expect at monitoring stations across Iowa?**
 
-The pipeline pulls together three real-world datasets — EPA water quality measurements, ISU climate station records, and USDA agricultural data — cleans and merges them, and trains scikit-learn regression models for four water quality targets:
+The repository integrates nine data sources across tabular, spatial, image, and text modalities:
 
-| Target Variable | Unit |
-|---|---|
-| Water Temperature | °C |
-| pH | pH |
-| Dissolved Oxygen | mg/L |
-| Nitrate | mg/L |
+- **Water Quality**: 971K EPA measurements across 1,667 monitoring stations and 80+ parameters
+- **Climate**: 4.3M daily records from ISU weather stations and PRISM gridded data
+- **Agriculture**: Crop yields, livestock, pesticide application, and nutrient inputs
+- **Regulatory**: 3.4M permit discharge records (NPDES) and water quality assessments (ATTAINS)
+- **Hydrology**: 561K daily streamflow records from 704 USGS gauges
+- **Soil**: 10.5K soil map units with hydrologic and chemical properties
+- **Land Use**: 11-year time series of 30 m resolution cropland classification
+- **Demographics**: Population and employment trends by county
+- **Imagery & Text**: Training images for water quality classification and city-level water summaries
+
+The core modeling pipeline trains scikit-learn regression models for four water quality targets:
+
+| Target Variable | Unit | Use Cases |
+|---|---|---|
+| Water Temperature | °C | Thermal ecology, aquatic life habitat |
+| pH | pH | Acid mine drainage detection, alkalinity trends |
+| Dissolved Oxygen | mg/L | Hypoxia risk, aquatic stress prediction |
+| Nitrate | mg/L | Nutrient loading, agricultural runoff impacts |
 
 Predictions are delivered through a locally runnable Dash app. The user selects a target, a model type, and a date, and the app runs inference across all monitoring stations before rendering a spatially interpolated map of predicted values across Iowa.
 
-Pre-trained model files are included in the repository so the dashboard works immediately without retraining.
+Pre-trained model files are included in the repository so the dashboard works immediately without retraining. Beyond prediction, the assembled data supports watershed-scale analysis, permit compliance evaluation, and agricultural influence studies.
 
 ---
 
 ## Data Sources
 
-| Dataset | Source | Raw File |
-|---|---|---|
-| EPA Water Quality Measurements | U.S. Environmental Protection Agency (WQX) | `data/tabular/water-quality/raw/epa-wq.csv` |
-| EPA Monitoring Station Locations | U.S. Environmental Protection Agency | `data/tabular/water-quality/raw/epa-stations.csv` |
-| Iowa DNR Water Quality | Iowa Department of Natural Resources | `data/tabular/water-quality/raw/IowaDNR-wq.csv` |
-| Climate Records | Iowa State University Climate Science | `data/tabular/climate/raw/isu-climate.csv` |
-| Agricultural Data | USDA National Agricultural Statistics Service | `data/tabular/agricultural/raw/usdaNass-agriculture.csv` |
+This project assembles a comprehensive, multi-modal dataset covering water quality, climate, agriculture, regulatory compliance, streamflow, soil, and census data for Iowa.
 
-Each EPA monitoring station is spatially matched to its nearest ISU climate station, and the climate features for that station are joined to each water quality observation by date.
+### Water Quality (557 MB raw + 10 MB clean)
+| Dataset | Source | File | Records |
+|---|---|---|---|
+| EPA Water Quality Measurements | U.S. EPA (WQX) | `data/tabular/water-quality/raw/epa-wq.csv` | 971K observations |
+| EPA Monitoring Stations | U.S. EPA | `data/tabular/water-quality/raw/epa-stations.csv` | 1,667 stations |
+| Cleaned & Pivoted Data | (processed) | `data/tabular/water-quality/clean/epa-wq-clean.csv` | 79K station-date records |
+
+80+ measured water quality parameters including temperature, pH, dissolved oxygen, nitrate, phosphate, turbidity, conductance, chlorophyll, bacteria (E. coli), and trace metals.
+
+### Climate (254 MB raw + 13 MB clean)
+| Dataset | Source | File | Records |
+|---|---|---|---|
+| ISU Climate Stations | Iowa State University | `data/tabular/climate/raw/isu-climate.csv` | 221K daily records |
+| PRISM Climate Grid | Oregon State University | `data/tabular/climate/raw/prism-iowa-climate.csv` | 4.1M daily grid cells |
+| Cleaned Climate Data | (processed) | `data/tabular/climate/clean/isu-climate-clean.csv` | 221K records |
+
+Daily measurements: max/min temperature, dew point, precipitation, snowfall, snow depth, wind speed/direction, and humidity.
+
+### Agriculture (7 MB)
+| Dataset | Source | File | Size |
+|---|---|---|---|
+| Crop Yields | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Yields.csv` | 1.8 MB |
+| Livestock Inventory | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Livestock-Inventory.csv` | 4.7 MB |
+| Crop Chemical Application | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Chemical-Application.csv` | 108 KB |
+| Fertilizer Spending | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Chemical-Fertilizer-Feed-Spending.csv` | 23 KB |
+| N-P Nutrient Inputs | USDA | `data/tabular/01_raw/agriculture/N-P_from_*.xlsx` | 1950–2017 |
+
+### Conservation BMPs (Iowa NRS Tracking, 3.6 MB)
+| Dataset | Source | File | Records |
+|---|---|---|---|
+| NRS Tracking — Full | Iowa State University / INRS | `data/tabular/01_raw/bmp/iowa-nrs-tracking.csv` | 20,428 rows (2003–2022) |
+| NRS Tracking — HUC-8 BMP Practices | Iowa State University / INRS | `data/tabular/01_raw/bmp/iowa-nrs-bmp-huc8.csv` | 2,195 rows |
+
+Annual practice adoption counts and acres by HUC-8 watershed (56 watersheds, 2003–2022) for CREP wetlands, bioreactors, saturated buffers, cover crops (NRCS practice 340), and erosion control structures. Joins to NHDPlus HUC-12 boundaries on the first 8 digits of the HUC-12 code.
+
+### NPDES Compliance & Permits (850 MB, 3.4M records)
+| Dataset | Source | File | Records |
+|---|---|---|---|
+| Discharge Monitoring Reports | EPA NPDES | `data/tabular/01_raw/npdes/NPDES_DMRS_FY*.csv` | 308K–365K per year (2015–2025) |
+| Water Quality Assessments | EPA ATTAINS | `data/tabular/01_raw/npdes/NPDES_ATTAINS_AU_SUMMARIES.csv` | 820K assessment units |
+| NPDES Catchments | EPA | `data/tabular/01_raw/npdes/NPDES_CATCHMENTS.csv` | Catchment-level data |
+| ECHO Facility Metadata | EPA ECHO (ICIS) | `data/tabular/01_raw/npdes/echo-facilities-iowa.csv` | 2,216 Iowa NPDES facilities |
+| ECHO NAICS Codes | EPA ECHO | `data/tabular/01_raw/npdes/echo-naics-iowa.csv` | 1,668 permit-NAICS associations |
+| ECHO SIC Codes | EPA ECHO | `data/tabular/01_raw/npdes/echo-sics-iowa.csv` | 1,693 permit-SIC associations |
+
+Detailed permit-linked discharge monitoring with effluent limits, reported exceedances, violations, and water body impairment status. ECHO facility data adds treatment-side context: facility type code, geocoded location, and SIC/NAICS industry classification (866 sewage treatment facilities and 168 cattle feedlots identified). All 1,469 DMR permit numbers match an ECHO facility. Join on `npdes_id` ↔ `EXTERNAL_PERMIT_NMBR`.
+
+### Streamflow (24 MB, 561K records)
+| Dataset | Source | File | Records |
+|---|---|---|---|
+| USGS Discharge Data | USGS | `data/tabular/streamflow/raw/usgs-iowa-discharge.csv` | 561K daily measurements |
+| USGS Gauge Locations | USGS | `data/tabular/streamflow/raw/usgs-iowa-gauges.csv` | 704 gauges |
+
+Daily streamflow (cubic feet per second) at 704 monitoring gauges across Iowa.
+
+### Soil (1.3 MB, 10.5K map units)
+| Dataset | Source | File |
+|---|---|---|
+| SSURGO Soil Properties | NRCS | `data/tabular/soil/raw/ssurgo-iowa-attributes.csv` |
+| SSURGO Soil Polygons | NRCS | `data/spatial/ssurgo/iowa-mapunit-polygons.shp` |
+
+Soil characteristics: hydraulic group, drainage class, saturated hydraulic conductivity (Ksat), and available water capacity.
+
+### Land Use & Spatial (1.4 MB tabular + rasters)
+| Dataset | Source | File |
+|---|---|---|
+| Cropland Data Layer (CDL) Fractions | NASS | `data/tabular/landuse/cdl-huc12-fractions.csv` |
+| CDL Raster Layers | NASS | `data/spatial/cdl/cdl_iowa_YYYY.tif` (2015–2025) |
+| NHDPlus Watersheds (HUC-12) | USGS | `data/spatial/nhdplus/wbd-huc12-iowa/WBDSnapshot_Iowa.shp` |
+| NHDPlus Gage Locations | USGS | `data/spatial/nhdplus/gage-loc/` |
+
+30 m resolution cropland classification and watershed boundaries.
+
+### Census (demographic)
+| Dataset | Source | File |
+|---|---|---|
+| Census 2010–2019 | U.S. Census | `data/tabular/census/raw/Iowa_Census-2010-2019.xlsx` |
+| Census 2020–2025 | U.S. Census | `data/tabular/census/raw/Iowa-Census-2020-2025.xlsx` |
+
+Population, employment, and demographic trends by county.
+
+### Image Data (40 samples)
+| Dataset | Source | Samples |
+|---|---|---|
+| Water Quality Images | (training set) | 24 clean + 16 dirty water samples |
+
+Training dataset for water quality visual classification.
+
+### Text Data (20 summaries)
+| Dataset | Source | Files |
+|---|---|---|
+| City-level Water Summaries | (processed narratives) | Ankeny, Cedar Rapids, Council Bluffs, Des Moines, Davenport, and 15 other Iowa cities |
+
+---
+
+### Data Integration & Linkage
+
+- **Spatial matching**: Each EPA monitoring station is linked to its nearest ISU climate station via haversine distance
+- **Temporal alignment**: All sources indexed by date (day, month, year) for time-series analysis
+- **Watershed integration**: HUC-12 codes link water quality observations, NPDES permits, and land use
+- **County linkage**: Agricultural and census data aggregated by county and joined spatially to monitoring locations
+
+**Geographic coverage**: Iowa statewide (1,667 EPA stations, 704 USGS gauges, 10.5K soil map units)  
+**Temporal coverage**: Climate and streamflow span 20+ years; NPDES monitoring FY2015–FY2025; agricultural data from 1950 onward
 
 ---
 
@@ -67,15 +176,25 @@ Each EPA monitoring station is spatially matched to its nearest ISU climate stat
 │
 ├── data/
 │   ├── tabular/
-│   │   ├── water-quality/
-│   │   │   ├── raw/                # Original EPA and DNR downloads
-│   │   │   └── clean/              # Cleaned and merged EPA tables
-│   │   ├── climate/
-│   │   │   ├── raw/                # Original ISU climate download
-│   │   │   └── clean/              # Cleaned climate table
-│   │   ├── agricultural/
-│   │   │   ├── raw/                # Original USDA NASS download
-│   │   │   └── clean/              # Cleaned agricultural table
+│   │   ├── water-quality/          # EPA & DNR measurements + station metadata
+│   │   │   ├── raw/                # 971K EPA WQX records, 1,667 station locations
+│   │   │   └── clean/              # Pivoted 79K station-date records
+│   │   ├── climate/                # ISU & PRISM climate data
+│   │   │   ├── raw/                # ISU (221K records) + PRISM (4.1M grid cells)
+│   │   │   └── clean/              # Standardized daily climate records
+│   │   ├── agriculture/            # USDA NASS crop & livestock data
+│   │   │   ├── raw/                # Yields, chemical application, livestock, fertilizer
+│   │   │   └── clean/              # Processed agricultural features
+│   │   ├── streamflow/             # USGS discharge measurements & gauge locations
+│   │   │   ├── raw/                # 561K daily streamflow records, 704 gauges
+│   │   │   └── clean/              # Processed streamflow data
+│   │   ├── npdes/                  # EPA permit compliance & water quality assessments
+│   │   │   └── raw/                # DMRS FY2015–2025, ATTAINS, catchments
+│   │   ├── soil/                   # NRCS SSURGO soil properties
+│   │   │   └── raw/                # 10.5K soil map units with attributes
+│   │   ├── landuse/                # NASS CDL fractions by watershed
+│   │   ├── census/                 # U.S. Census demographic data
+│   │   │   └── raw/                # 2010–2025 population & employment
 │   │   ├── merged/                 # Final joined tables used for modeling
 │   │   │   ├── epa-climate-merged.csv        # Main modeling dataset
 │   │   │   ├── epa-merged.csv                # EPA stations + measurements joined
@@ -84,12 +203,27 @@ Each EPA monitoring station is spatially matched to its nearest ISU climate stat
 │   │       ├── sklearn_model_metrics.csv
 │   │       ├── multiple_linear_regression_metrics.csv
 │   │       └── multiple_linear_regression_coefficients.csv
+│   ├── spatial/
+│   │   ├── cdl/                    # NASS Cropland Data Layer (2015–2025 rasters)
+│   │   ├── ssurgo/                 # NRCS soil map unit polygons (shapefiles)
+│   │   └── nhdplus/                # USGS National Hydrography Dataset
+│   │       ├── wbd-huc12-iowa/     # HUC-12 watershed boundaries
+│   │       ├── gage-loc/           # Stream gauge locations
+│   │       └── crosswalk/          # Hydrologic feature linkages
 │   ├── images/
-│   │   └── water-images/           # Water quality image samples (clean/dirty)
+│   │   └── water-images/           # Training images (24 clean + 16 dirty samples)
+│   │       └── train/
 │   └── text/
-│       └── raw/                    # City-level water summary text files
+│       └── raw/                    # City-level water summary narratives (20 cities)
 │
 └── src/
+    ├── 01_download/
+    │   ├── cdl-cropland-download.ipynb       # NASS CDL rasters
+    │   ├── prism-climate-download.ipynb      # PRISM gridded climate
+    │   ├── ssurgo-soil-download.ipynb        # NRCS SSURGO soil polygons
+    │   ├── usgs-streamflow-download.ipynb    # USGS daily discharge
+    │   ├── echo-facilities-download.ipynb    # EPA ECHO NPDES facility metadata
+    │   └── iowa-nrs-bmp-download.ipynb       # Iowa NRS conservation BMP tracking
     ├── cleaning/
     │   └── tabular/
     │       ├── water-quality/      # Notebooks: epa-wq-clean, epa-stations-clean
