@@ -60,98 +60,102 @@ Pre-trained model files are included in the repository so the dashboard works im
 
 This project assembles a comprehensive, multi-modal dataset covering water quality, climate, agriculture, regulatory compliance, streamflow, soil, and census data for Iowa.
 
-### Water Quality (557 MB raw + 10 MB clean)
+> 📑 **See [`DATA.md`](DATA.md) for the full data dictionary** — every column in every dataset described, with source links and a raw-data size table (rows, columns, MB).
+>
+> **Path note:** raw inputs live under `data/tabular/01_raw/<domain>/` and `data/spatial/01_raw/`; cleaned outputs under `data/tabular/02_clean/<domain>/`; merged modeling tables under `data/tabular/03_merged/`.
+
+### Water Quality (557 MB raw + clean)
 | Dataset | Source | File | Records |
 |---|---|---|---|
-| EPA Water Quality Measurements | U.S. EPA (WQX) | `data/tabular/water-quality/raw/epa-wq.csv` | 971K observations |
-| EPA Monitoring Stations | U.S. EPA | `data/tabular/water-quality/raw/epa-stations.csv` | 1,667 stations |
-| Cleaned & Pivoted Data | (processed) | `data/tabular/water-quality/clean/epa-wq-clean.csv` | 79K station-date records |
+| EPA Water Quality Measurements | [U.S. EPA Water Quality Portal (WQX)](https://www.waterqualitydata.us/) | `data/tabular/01_raw/water-quality/epa-wq.csv` | 970,946 observations |
+| EPA Monitoring Stations | [U.S. EPA / USGS NWIS](https://www.waterqualitydata.us/) | `data/tabular/01_raw/water-quality/epa-stations.csv` | 1,666 stations |
+| Cleaned & Pivoted Data | (processed) | `data/tabular/02_clean/water-quality/epa-wq-clean.csv` | station-date wide records |
 
 80+ measured water quality parameters including temperature, pH, dissolved oxygen, nitrate, phosphate, turbidity, conductance, chlorophyll, bacteria (E. coli), and trace metals.
 
-### Climate (254 MB raw + 13 MB clean)
+### Climate (254 MB raw + clean)
 | Dataset | Source | File | Records |
 |---|---|---|---|
-| ISU Climate Stations | Iowa State University | `data/tabular/climate/raw/isu-climate.csv` | 221K daily records |
-| PRISM Climate Grid | Oregon State University | `data/tabular/climate/raw/prism-iowa-climate.csv` | 4.1M daily grid cells |
-| Cleaned Climate Data | (processed) | `data/tabular/climate/clean/isu-climate-clean.csv` | 221K records |
+| ISU / IEM Climate Stations | [Iowa State University — Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) | `data/tabular/01_raw/climate/isu-climate.csv` | 221,559 daily records |
+| PRISM Climate Grid | [PRISM Climate Group, Oregon State University](https://prism.oregonstate.edu/) | `data/tabular/01_raw/climate/prism-iowa-climate.csv` | 4.1M daily station-day records |
+| Cleaned Climate Data | (processed) | `data/tabular/02_clean/climate/isu-climate-clean.csv`, `prism-iowa-climate-clean.csv` | 221K + 4.1M records |
 
 Daily measurements: max/min temperature, dew point, precipitation, snowfall, snow depth, wind speed/direction, and humidity.
 
-### Agriculture (7 MB)
+### Agriculture (~23 MB)
 | Dataset | Source | File | Size |
 |---|---|---|---|
-| Crop Yields | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Yields.csv` | 1.8 MB |
-| Livestock Inventory | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Livestock-Inventory.csv` | 4.7 MB |
-| Crop Chemical Application | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Chemical-Application.csv` | 108 KB |
-| Fertilizer Spending | USDA NASS | `data/tabular/01_raw/agriculture/USDA-NASS-Chemical-Fertilizer-Feed-Spending.csv` | 23 KB |
-| N-P Nutrient Inputs | USDA | `data/tabular/01_raw/agriculture/N-P_from_*.xlsx` | 1950–2017 |
+| Crop Yields | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Yields.csv` | 1.8 MB |
+| Livestock Inventory | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Livestock-Inventory.csv` | 4.7 MB |
+| Crop Chemical Application | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Chemical-Application.csv` | 0.1 MB |
+| Fertilizer Spending | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Chemical-Fertilizer-Feed-Spending.csv` | 23 KB |
+| N-P Nutrient Inputs | [USGS (Falcone 2021, OFR 2020-1153)](https://www.sciencebase.gov/catalog/item/5ebad56382ce25b51361806a) | `data/tabular/01_raw/agriculture/N-P_from_*.xlsx` | 15 MB (1950–2017) |
 
 ### Conservation BMPs (Iowa NRS Tracking, 3.6 MB)
 | Dataset | Source | File | Records |
 |---|---|---|---|
-| NRS Tracking — Full | Iowa State University / INRS | `data/tabular/01_raw/bmp/iowa-nrs-tracking.csv` | 20,428 rows (2003–2022) |
-| NRS Tracking — HUC-8 BMP Practices | Iowa State University / INRS | `data/tabular/01_raw/bmp/iowa-nrs-bmp-huc8.csv` | 2,195 rows |
+| NRS Tracking — Full | [Iowa State University / Iowa NRS](https://www.nutrientstrategy.iastate.edu/) | `data/tabular/01_raw/bmp/iowa-nrs-tracking.csv` | 20,428 rows (2003–2022) |
+| NRS Tracking — HUC-8 BMP Practices | [Iowa State University / Iowa NRS](https://www.nutrientstrategy.iastate.edu/) | `data/tabular/01_raw/bmp/iowa-nrs-bmp-huc8.csv` | 2,195 rows |
 
 Annual practice adoption counts and acres by HUC-8 watershed (56 watersheds, 2003–2022) for CREP wetlands, bioreactors, saturated buffers, cover crops (NRCS practice 340), and erosion control structures. Joins to NHDPlus HUC-12 boundaries on the first 8 digits of the HUC-12 code.
 
-### NPDES Compliance & Permits (850 MB, 3.4M records)
+### NPDES Compliance & Permits (~1.3 GB, 4.9M records)
 | Dataset | Source | File | Records |
 |---|---|---|---|
-| Discharge Monitoring Reports | EPA NPDES | `data/tabular/01_raw/npdes/NPDES_DMRS_FY*.csv` | 308K–365K per year (2015–2025) |
-| Water Quality Assessments | EPA ATTAINS | `data/tabular/01_raw/npdes/NPDES_ATTAINS_AU_SUMMARIES.csv` | 820K assessment units |
-| NPDES Catchments | EPA | `data/tabular/01_raw/npdes/NPDES_CATCHMENTS.csv` | Catchment-level data |
-| ECHO Facility Metadata | EPA ECHO (ICIS) | `data/tabular/01_raw/npdes/echo-facilities-iowa.csv` | 2,216 Iowa NPDES facilities |
-| ECHO NAICS Codes | EPA ECHO | `data/tabular/01_raw/npdes/echo-naics-iowa.csv` | 1,668 permit-NAICS associations |
-| ECHO SIC Codes | EPA ECHO | `data/tabular/01_raw/npdes/echo-sics-iowa.csv` | 1,693 permit-SIC associations |
+| Discharge Monitoring Reports | [EPA ECHO / ICIS-NPDES](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/NPDES_DMRS_FY*.csv` | 2.79M (11 files, FY2015–2025) |
+| Water Quality Assessments | [EPA ATTAINS](https://www.epa.gov/waterdata/attains) | `data/tabular/01_raw/npdes/NPDES_ATTAINS_AU_SUMMARIES.csv` | 820,292 assessment units |
+| NPDES Catchments | [EPA / NHDPlus](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/NPDES_CATCHMENTS.csv` | 1.26M catchment links |
+| ECHO Facility Metadata | [EPA ECHO (ICIS)](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/echo-facilities-iowa.csv` | 2,216 Iowa NPDES facilities |
+| ECHO NAICS Codes | [EPA ECHO](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/echo-naics-iowa.csv` | 1,668 permit-NAICS associations |
+| ECHO SIC Codes | [EPA ECHO](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/echo-sics-iowa.csv` | 1,693 permit-SIC associations |
 
-Detailed permit-linked discharge monitoring with effluent limits, reported exceedances, violations, and water body impairment status. ECHO facility data adds treatment-side context: facility type code, geocoded location, and SIC/NAICS industry classification (866 sewage treatment facilities and 168 cattle feedlots identified). All 1,469 DMR permit numbers match an ECHO facility. Join on `npdes_id` ↔ `EXTERNAL_PERMIT_NMBR`.
+Detailed permit-linked discharge monitoring with effluent limits, reported exceedances, violations, and water body impairment status. The DMR, ATTAINS, and Catchments files are national EPA extracts; ECHO facility data is Iowa-scoped and adds treatment-side context: facility type code, geocoded location, and SIC/NAICS industry classification. Join on `npdes_id` ↔ `EXTERNAL_PERMIT_NMBR`.
 
 ### Streamflow (24 MB, 561K records)
 | Dataset | Source | File | Records |
 |---|---|---|---|
-| USGS Discharge Data | USGS | `data/tabular/streamflow/raw/usgs-iowa-discharge.csv` | 561K daily measurements |
-| USGS Gauge Locations | USGS | `data/tabular/streamflow/raw/usgs-iowa-gauges.csv` | 704 gauges |
+| USGS Discharge Data | [USGS NWIS / Water Data](https://waterdata.usgs.gov/) | `data/tabular/01_raw/streamflow/usgs-iowa-discharge.csv` | 560,896 daily measurements |
+| USGS Gauge Locations | [USGS NWIS / Water Data](https://waterdata.usgs.gov/) | `data/tabular/01_raw/streamflow/usgs-iowa-gauges.csv` | 703 gauges |
 
-Daily streamflow (cubic feet per second) at 704 monitoring gauges across Iowa.
+Daily streamflow (cubic feet per second) at 703 monitoring gauges across Iowa.
 
-### Soil (1.3 MB, 10.5K map units)
+### Soil (213 MB, 10.5K map units)
 | Dataset | Source | File |
 |---|---|---|
-| SSURGO Soil Properties | NRCS | `data/tabular/soil/raw/ssurgo-iowa-attributes.csv` |
-| SSURGO Soil Polygons | NRCS | `data/spatial/ssurgo/iowa-mapunit-polygons.shp` |
+| SSURGO Soil Properties | [USDA-NRCS Web Soil Survey](https://websoilsurvey.nrcs.usda.gov/) | `data/tabular/01_raw/soil/ssurgo-iowa-attributes.csv` |
+| SSURGO Soil Polygons | [USDA-NRCS Web Soil Survey](https://websoilsurvey.nrcs.usda.gov/) | `data/spatial/01_raw/ssurgo/iowa-mapunit-polygons.shp` |
 
 Soil characteristics: hydraulic group, drainage class, saturated hydraulic conductivity (Ksat), and available water capacity.
 
-### Land Use & Spatial (1.4 MB tabular + rasters)
+### Land Use & Spatial (~470 MB)
 | Dataset | Source | File |
 |---|---|---|
-| Cropland Data Layer (CDL) Fractions | NASS | `data/tabular/landuse/cdl-huc12-fractions.csv` |
-| CDL Raster Layers | NASS | `data/spatial/cdl/cdl_iowa_YYYY.tif` (2015–2025) |
-| NHDPlus Watersheds (HUC-12) | USGS | `data/spatial/nhdplus/wbd-huc12-iowa/WBDSnapshot_Iowa.shp` |
-| NHDPlus Gage Locations | USGS | `data/spatial/nhdplus/gage-loc/` |
+| Cropland Data Layer (CDL) Fractions | [USDA-NASS CroplandCROS](https://nassgeodata.gmu.edu/CropScape/) | `data/tabular/01_raw/landuse/cdl-huc12-fractions.csv` |
+| CDL Raster Layers | [USDA-NASS CroplandCROS](https://nassgeodata.gmu.edu/CropScape/) | `data/spatial/01_raw/cdl/cdl_iowa_YYYY.tif` (2015–2025) |
+| NHDPlus Watersheds (HUC-12) | [USGS / EPA NHDPlus V2.1](https://www.epa.gov/waterdata/nhdplus-national-data) | `data/spatial/01_raw/nhdplus/wbd-huc12-iowa/WBDSnapshot_Iowa.shp` |
+| NHDPlus Gage Locations | [USGS / EPA NHDPlus V2.1](https://www.epa.gov/waterdata/nhdplus-national-data) | `data/spatial/01_raw/nhdplus/gage-loc/` |
 
 30 m resolution cropland classification and watershed boundaries.
 
 ### Census (demographic)
 | Dataset | Source | File |
 |---|---|---|
-| Census 2010–2019 | U.S. Census | `data/tabular/census/raw/Iowa_Census-2010-2019.xlsx` |
-| Census 2020–2025 | U.S. Census | `data/tabular/census/raw/Iowa-Census-2020-2025.xlsx` |
+| Census 2010–2019 | [U.S. Census Bureau (PEP)](https://www.census.gov/programs-surveys/popest.html) | `data/tabular/01_raw/census/Iowa_Census-2010-2019.xlsx` |
+| Census 2020–2025 | [U.S. Census Bureau (PEP)](https://www.census.gov/programs-surveys/popest.html) | `data/tabular/01_raw/census/Iowa-Census-2020-2025.xlsx` |
 
-Population, employment, and demographic trends by county.
+Annual county population estimates from the Census Bureau's Population Estimates Program.
 
 ### Image Data (40 samples)
 | Dataset | Source | Samples |
 |---|---|---|
-| Water Quality Images | (training set) | 24 clean + 16 dirty water samples |
+| Water Quality Images | (training set) | `data/images/water-images/train/` — 24 clean + 16 dirty water samples |
 
 Training dataset for water quality visual classification.
 
 ### Text Data (20 summaries)
 | Dataset | Source | Files |
 |---|---|---|
-| City-level Water Summaries | (processed narratives) | Ankeny, Cedar Rapids, Council Bluffs, Des Moines, Davenport, and 15 other Iowa cities |
+| City-level Water Summaries | (processed narratives) | `data/text/raw/` — Ankeny, Cedar Rapids, Council Bluffs, Des Moines, Davenport, and 15 other Iowa cities |
 
 ---
 
