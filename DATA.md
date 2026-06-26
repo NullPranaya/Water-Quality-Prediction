@@ -17,8 +17,10 @@ together are flagged as **(key)**.
 - [Climate](#climate)
   - [ISU / IEM Climate (`isu-climate.csv`)](#isu--iem-climate--isu-climatecsv)
   - [PRISM Climate (`prism-iowa-climate.csv`)](#prism-climate--prism-iowa-climatecsv)
+  - [Cleaned outputs](#cleaned-climate-outputs)
 - [Agriculture](#agriculture)
   - [USDA NASS tables](#usda-nass-tables)
+  - [Cleaned USDA NASS outputs](#cleaned-usda-nass-outputs)
   - [USGS County N & P Inputs (`N-P_from_*.xlsx`)](#usgs-county-n--p-inputs--n-p_from_xlsx)
 - [Conservation BMPs (Iowa NRS)](#conservation-bmps-iowa-nrs)
 - [NPDES Compliance & Permits](#npdes-compliance--permits)
@@ -278,8 +280,7 @@ station codes that are spatially matched to WQ sites in the merge step.
 | `climo_high_f` | Climatological normal high temperature for that calendar day (°F). |
 | `climo_low_f` | Climatological normal low temperature for that calendar day (°F). |
 
-Cleaned to `data/tabular/02_clean/climate/isu-climate-clean.csv` (same schema,
-range-validated, all rows retained).
+Cleaned output: [`isu-climate-clean.csv`](#cleaned-climate-outputs).
 
 ### PRISM Climate (`prism-iowa-climate.csv`)
 
@@ -298,9 +299,35 @@ is the EPA `MonitoringLocationIdentifier`.
 | `ppt` | Daily total precipitation (mm). |
 | `tdmean` | Daily mean dew-point temperature (°C). |
 
-Cleaned to `data/tabular/02_clean/climate/prism-iowa-climate-clean.csv`, where the
-measurements are renamed to unit-bearing `prism_tmax_c`, `prism_tmin_c`,
-`prism_ppt_mm`, `prism_tdmean_c`.
+Cleaned output: [`prism-iowa-climate-clean.csv`](#cleaned-climate-outputs).
+
+### Cleaned climate outputs
+
+Produced by the notebooks in `src/02_cleaning/tabular/climate/`. Both tables stay
+one-row-per-station-day and are range-validated against generous physical bounds
+(values outside them are nulled, not clipped); gaps are left as blanks for the
+modeling step to handle rather than imputed here.
+
+**`data/tabular/02_clean/climate/isu-climate-clean.csv`** (~221K station-day rows)
+— the ISU/IEM feed with its **same 20-column schema** (keyed `station` + `day`,
+see the [raw table above](#isu--iem-climate--isu-climatecsv)); every variable
+range-validated, all rows retained.
+
+**`data/tabular/02_clean/climate/prism-iowa-climate-clean.csv`** (~4.1M
+station-day rows) — one row per `station_id` + `date`, **de-duplicated so the
+key is unique** and the water-quality join can't fan out. PRISM's `-9999` nodata
+sentinel is mapped to blank, and `tmin > tmax` pairs are nulled. The four raw
+measurements are renamed to unit-bearing columns so units and provenance are
+explicit once merged onto the WQ table:
+
+| Column | Description |
+|---|---|
+| `station_id` | **(key)** EPA WQX `MonitoringLocationIdentifier` the grid was sampled at. |
+| `date` | Calendar date (`YYYY-MM-DD`). |
+| `prism_tmax_c` | Daily maximum air temperature (°C). |
+| `prism_tmin_c` | Daily minimum air temperature (°C). |
+| `prism_ppt_mm` | Daily total precipitation (mm). |
+| `prism_tdmean_c` | Daily mean dew-point temperature (°C). |
 
 ---
 
@@ -338,6 +365,104 @@ share the standard Quick Stats 21-column export schema; only the
 | `Domain Category` | Specific category within the domain (e.g. a chemical name, a herd-size band). |
 | `Value` | The reported numeric value (comma-formatted; unit is embedded in `Data Item`). |
 | `CV (%)` | Coefficient of variation (%) — the sampling reliability of survey estimates. |
+
+### Cleaned USDA NASS outputs
+
+One cleaning notebook per source file lives in
+`src/02_cleaning/tabular/agriculture/`; each writes a tidy table to
+`data/tabular/02_clean/agriculture/`. **Conventions shared by all four:**
+
+- The packed `Data Item` string is unpacked into separate `commodity_detail`,
+  `statistic`, and `unit` columns (e.g. `CORN, GRAIN - YIELD, MEASURED IN BU /
+  ACRE` → `CORN, GRAIN` / `YIELD` / `BU / ACRE`).
+- `Value` and `CV (%)` are parsed to numbers; NASS letter suppression codes
+  (`(D)`, `(Z)`, `(H)`, `(L)`, …) become **blank, never `0`**. A boolean
+  `value_suppressed` flag marks rows whose value was a `(D)` disclosure
+  suppression, so "censored" stays distinguishable from "not collected".
+- `Year` → integer; county series carry a 5-digit `county_fips` (state+county
+  FIPS, blank for `OTHER (COMBINED) COUNTIES` roll-ups), state series a 2-digit
+  `state_fips` (`19` = Iowa). Empty / constant export columns (`Week Ending`,
+  `Zip Code`, `Geo Level`, `State`, …) are dropped, and the row key is asserted
+  unique.
+
+#### `crop-yields-clean.csv`
+
+County-level, 9,931 rows — one per `(program, year, county, commodity_detail,
+statistic)`, 2015–2025.
+
+| Column | Description |
+|---|---|
+| `program` | `SURVEY` or `CENSUS`. |
+| `year` | Reference year (int). |
+| `ag_district_code` | NASS ag-district code. **(key)** — distinguishes the per-district `OTHER (COMBINED) COUNTIES` roll-ups. |
+| `ag_district` | Ag-district name. |
+| `county` | County name (includes roll-up buckets like `OTHER (COMBINED) COUNTIES`). |
+| `county_fips` | **(key)** 5-digit state+county FIPS; blank for roll-up buckets. |
+| `commodity` | Coarse commodity (`CORN`, `SOYBEANS`, `HAY`, `OATS`, `WHEAT`, `BARLEY`, `RYE`). |
+| `commodity_detail` | Specific commodity, e.g. `CORN, GRAIN` vs `CORN, SILAGE`. |
+| `statistic` | `PRODUCTION`, `YIELD`, or `ACRES PLANTED`. |
+| `unit` | Measurement unit (`BU`, `BU / ACRE`, `TONS`, `TONS / ACRE`, `LB`); blank for `ACRES PLANTED`. |
+| `value` | Reported numeric value (blank where suppressed). |
+| `value_suppressed` | `True` where the raw value was a `(D)` suppression code. |
+| `cv_pct` | Coefficient of variation (%); blank for census/suppressed rows. |
+
+#### `livestock-inventory-clean.csv`
+
+County-level, 21,868 rows — one per `(program, year, period, county,
+commodity_detail, statistic, herd_size_band)`, 2015–2025. **Holds two layers:**
+headline totals (`domain == "TOTAL"`) and the *same operations* re-counted into
+herd-size bands — the band rows must **not** be summed with the totals.
+
+| Column | Description |
+|---|---|
+| `program` | `SURVEY` or `CENSUS`. |
+| `year` | Reference year (int). |
+| `period` | Reference point: `END OF DEC` (census) or `FIRST OF JAN` (survey). |
+| `ag_district_code` / `ag_district` / `county` / `county_fips` | County keys, as in crop yields. |
+| `commodity` | `CATTLE`, `HOGS`, `GOATS`, `SHEEP`. |
+| `commodity_detail` | Class within species, e.g. `CATTLE, COWS, MILK`. |
+| `statistic` | `INVENTORY` (head) or `OPERATIONS WITH INVENTORY` (farm counts). |
+| `unit` | `HEAD` or `OPERATIONS`, set from the statistic (the raw export leaves it blank). |
+| `domain` | `TOTAL` for the headline series, else the herd-size breakdown dimension. |
+| `herd_size_band` | Herd-size band for breakdown rows (e.g. `1 TO 9`, `500 OR MORE`); blank for `TOTAL` rows. |
+| `value` | Reported numeric value (blank where suppressed). |
+| `value_suppressed` | `True` where the raw value was `(D)`. |
+| `cv_pct` | Coefficient of variation (%); blank for census/suppressed rows. |
+
+#### `crop-chemical-application-clean.csv`
+
+State-level, 530 rows — one per `(year, commodity, input_class,
+active_ingredient)`, selected years 2015–2023. Pounds of active ingredient
+applied statewide; the most directly water-quality-relevant ag table.
+
+| Column | Description |
+|---|---|
+| `year` | Reference year (int). |
+| `state_fips` | **(key)** 2-digit state FIPS (`19`). |
+| `commodity` | `CORN` or `SOYBEANS`. |
+| `statistic` | `APPLICATIONS`. |
+| `unit` | `LB` (pounds of active ingredient). |
+| `input_class` | `HERBICIDE`, `FUNGICIDE`, `INSECTICIDE`, `OTHER`, or `FERTILIZER` (parsed from `Domain`). |
+| `active_ingredient` | Active-ingredient / nutrient name (e.g. `GLYPHOSATE`, `NITROGEN`), or `TOTAL` for per-class subtotals. |
+| `chemical_code` | NASS numeric chemical code; blank for fertilizer nutrients and `TOTAL` rows. |
+| `value` | Pounds applied statewide (blank where suppressed — ~45% are `(D)`). |
+| `value_suppressed` | `True` where the raw value was `(D)`. |
+
+#### `chemical-fertilizer-feed-spending-clean.csv`
+
+State-level, 120 rows — one per `(year, expense_category, unit)`, 2015–2024.
+Annual statewide farm production expenses.
+
+| Column | Description |
+|---|---|
+| `year` | Reference year (int). |
+| `state_fips` | **(key)** 2-digit state FIPS (`19`). |
+| `commodity` | Raw NASS commodity label (`CHEMICAL TOTALS`, `FERTILIZER TOTALS`, `FEED`). |
+| `expense_category` | Expense category: `CHEMICAL TOTALS`; `FERTILIZER TOTALS, INCL LIME & SOIL CONDITIONERS`; `FEED`. |
+| `statistic` | `EXPENSE`. |
+| `unit` | Reporting basis: `$`, `$ / OPERATION`, `PCT OF OPERATIONS`, `PCT OF PRODUCTION EXPENSES`. |
+| `value` | Reported numeric value. |
+| `value_suppressed` | `True` where suppressed (none in the current extract). |
 
 ### USGS County N & P Inputs (`N-P_from_*.xlsx`)
 
