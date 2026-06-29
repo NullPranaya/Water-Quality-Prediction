@@ -10,4 +10,5 @@ src/**/__pycache__/
 # Data
 data/
 
-# Model files
+# Claude files
+CLAUDE.md

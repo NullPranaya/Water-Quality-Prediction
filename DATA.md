@@ -22,16 +22,23 @@ together are flagged as **(key)**.
   - [USDA NASS tables](#usda-nass-tables)
   - [Cleaned USDA NASS outputs](#cleaned-usda-nass-outputs)
   - [USGS County N & P Inputs (`N-P_from_*.xlsx`)](#usgs-county-n--p-inputs--n-p_from_xlsx)
+  - [Cleaned N & P outputs](#cleaned-n--p-outputs)
 - [Conservation BMPs (Iowa NRS)](#conservation-bmps-iowa-nrs)
+  - [Cleaned BMP outputs](#cleaned-bmp-outputs)
 - [NPDES Compliance & Permits](#npdes-compliance--permits)
   - [Discharge Monitoring Reports (`NPDES_DMRS_FY*.csv`)](#discharge-monitoring-reports--npdes_dmrs_fycsv)
   - [ATTAINS Assessments (`NPDES_ATTAINS_AU_SUMMARIES.csv`)](#attains-assessments--npdes_attains_au_summariescsv)
   - [NPDES Catchments (`NPDES_CATCHMENTS.csv`)](#npdes-catchments--npdes_catchmentscsv)
   - [ECHO Facilities / NAICS / SIC](#echo-facilities--naics--sic)
+  - [Cleaned NPDES outputs](#cleaned-npdes-outputs)
 - [Streamflow](#streamflow)
+  - [Cleaned streamflow outputs](#cleaned-streamflow-outputs)
 - [Soil (SSURGO)](#soil-ssurgo)
+  - [Cleaned soil output](#cleaned-soil-output)
 - [Land Use (Cropland Data Layer)](#land-use-cropland-data-layer)
+  - [Cleaned land use output](#cleaned-land-use-output)
 - [Census / Demographics](#census--demographics)
+  - [Cleaned census outputs](#cleaned-census-outputs)
 - [Spatial Layers](#spatial-layers)
 - [Imagery & Text](#imagery--text)
 
@@ -51,10 +58,10 @@ exclude the header; `MB` is on-disk file size (1 MB = 1024 KB).
 | EPA Monitoring Stations | `water-quality/epa-stations.csv` | 1,666 | 37 | 0.37 |
 | ISU / IEM Climate | `climate/isu-climate.csv` | 221,559 | 20 | 26.07 |
 | PRISM Climate | `climate/prism-iowa-climate.csv` | 4,105,024 | 6 | 228.30 |
-| USDA NASS Crop Yields | `agriculture/USDA-NASS-Crop-Yields.csv` | 9,931 | 21 | 1.77 |
-| USDA NASS Livestock Inventory | `agriculture/USDA-NASS-Livestock-Inventory.csv` | 21,868 | 21 | 4.69 |
-| USDA NASS Crop Chemical Application | `agriculture/USDA-NASS-Crop-Chemical-Application.csv` | 530 | 21 | 0.11 |
-| USDA NASS Fertilizer/Feed Spending | `agriculture/USDA-NASS-Chemical-Fertilizer-Feed-Spending.csv` | 120 | 21 | 0.02 |
+| USDA NASS Crop Yields | `agriculture/Crop-Yields.csv` | 9,931 | 21 | 1.77 |
+| USDA NASS Livestock Inventory | `agriculture/Livestock-Inventory.csv` | 21,868 | 21 | 4.69 |
+| USDA NASS Crop Chemical Application | `agriculture/Crop-Chemical-Application.csv` | 530 | 21 | 0.11 |
+| USDA NASS Fertilizer/Feed Spending | `agriculture/Chemical-Fertilizer-Feed-Spending.csv` | 120 | 21 | 0.02 |
 | USGS County N&P from Fertilizer | `agriculture/N-P_from_fertilizer_1950-2017-july23-2020.xlsx` | 3,066 | 20 | 1.43 |
 | USGS County N&P from Manure | `agriculture/N-P_from_manure_1950-2017-july23-2020.xlsx` | 3,066 | 31 | 13.44 |
 | Iowa NRS Tracking — Full | `bmp/iowa-nrs-tracking.csv` | 20,428 | 37 | 3.39 |
@@ -100,6 +107,8 @@ STORET + NWIS feed. <https://www.waterqualitydata.us/>. `ProviderName`
 distinguishes the originating system (`NWIS` = USGS, `STORET` = EPA/state).
 
 ### EPA Water Quality Measurements (`epa-wq.csv`)
+
+This table records individual chemical, physical, and biological measurements collected at Iowa stream and lake monitoring stations. Each row captures a single analyte result — such as nitrate concentration, dissolved oxygen, or E. coli count — along with the sampling date, depth, method, and quality flags. It is the primary response-variable source for the project, linking ~971K observations across 19 standardized parameters to specific locations and times.
 
 Long table, one row per individual measurement (~971K rows). Full WQX result
 schema (81 columns).
@@ -190,6 +199,8 @@ schema (81 columns).
 
 ### EPA Monitoring Stations (`epa-stations.csv`)
 
+This table provides the geospatial and administrative identity of each water-quality monitoring location — its coordinates, watershed affiliation, county, and station type (stream, lake, well, etc.). It is the spatial backbone that anchors measurement records to specific places on the landscape and enables joining WQ data to climate, land-use, and soil datasets via `MonitoringLocationIdentifier` and `HUCEightDigitCode`.
+
 Station metadata, one row per monitoring location (~1,667 stations, 37 columns).
 
 | Column | Description |
@@ -257,6 +268,8 @@ station summaries. <https://mesonet.agron.iastate.edu/> (request endpoint
 `/cgi-bin/request/daily.py`). One row per station-day (~221K rows). Keyed on ISU
 station codes that are spatially matched to WQ sites in the merge step.
 
+This dataset captures daily meteorological conditions — temperature, precipitation, humidity, wind, and snowpack — at Iowa airport weather stations. It provides the in-situ atmospheric context that drives runoff and nutrient transport events, serving as the nearest-station climate feature for each water-quality monitoring site after a spatial match is applied in the merge step.
+
 | Column | Description |
 |---|---|
 | `station` | **(key)** IEM/ISU station code (e.g. `OOA`). |
@@ -290,6 +303,8 @@ climate, sampled at each EPA water-quality station coordinate. <https://prism.or
 stations × ~2,464 days (~4.1M rows). Joins **directly** to WQ sites — `station_id`
 is the EPA `MonitoringLocationIdentifier`.
 
+This dataset provides gridded daily temperature, precipitation, and dew-point estimates extracted at the exact coordinates of each water-quality monitoring station. Because PRISM interpolates climate surfaces across the full landscape, it gives complete, gap-free climate records for every WQ site without the spatial-matching uncertainty that comes with the nearest-airport IEM data.
+
 | Column | Description |
 |---|---|
 | `date` | Calendar date (`YYYY-MM-DD`). |
@@ -303,7 +318,7 @@ Cleaned output: [`prism-iowa-climate-clean.csv`](#cleaned-climate-outputs).
 
 ### Cleaned climate outputs
 
-Produced by the notebooks in `src/02_cleaning/tabular/climate/`. Both tables stay
+Produced by the notebooks in `src/02_clean/tabular/climate/`. Both tables stay
 one-row-per-station-day and are range-validated against generous physical bounds
 (values outside them are nulled, not clipped); gaps are left as blanks for the
 modeling step to handle rather than imputed here.
@@ -337,10 +352,12 @@ explicit once merged onto the WQ table:
 
 **Source:** **USDA National Agricultural Statistics Service (NASS) Quick Stats.**
 <https://quickstats.nass.usda.gov/>. Four files
-(`USDA-NASS-Crop-Yields.csv`, `-Livestock-Inventory.csv`,
-`-Crop-Chemical-Application.csv`, `-Chemical-Fertilizer-Feed-Spending.csv`) all
+(`Crop-Yields.csv`, `Livestock-Inventory.csv`,
+`Crop-Chemical-Application.csv`, `Chemical-Fertilizer-Feed-Spending.csv`) all
 share the standard Quick Stats 21-column export schema; only the
 `Commodity` / `Data Item` / `Domain` content differs.
+
+These four tables collectively describe Iowa's agricultural landscape at annual resolution: what crops were grown and at what yields, how many livestock were present by species and herd size, what volumes of herbicides and fertilizers were applied to crops, and what farms spent on chemicals and feed. Together they quantify the nutrient and chemical loading pressure that translates into water-quality signals observed at downstream monitoring stations.
 
 | Column | Description |
 |---|---|
@@ -369,7 +386,7 @@ share the standard Quick Stats 21-column export schema; only the
 ### Cleaned USDA NASS outputs
 
 One cleaning notebook per source file lives in
-`src/02_cleaning/tabular/agriculture/`; each writes a tidy table to
+`src/02_clean/tabular/agriculture/`; each writes a tidy table to
 `data/tabular/02_clean/agriculture/`. **Conventions shared by all four:**
 
 - The packed `Data Item` string is unpacked into separate `commodity_detail`,
@@ -472,6 +489,8 @@ Report 2020-1153, data release DOI 10.5066/P9VSQN3C.
 <https://www.sciencebase.gov/catalog/item/5ebad56382ce25b51361806a>. Wide tables,
 one row per U.S. county with many year-suffixed columns.
 
+These two wide-format tables quantify the kilograms of nitrogen and phosphorus delivered to Iowa counties each year via commercial fertilizer and animal manure, respectively, from 1950 through 2017. They offer a long historical baseline of nutrient loading that complements the shorter NASS survey window, and the manure table further breaks down N and P contributions by livestock species (cattle, hogs, chickens, etc.).
+
 `N-P_from_fertilizer_1950-2017-july23-2020.xlsx`:
 
 | Column | Description |
@@ -495,12 +514,66 @@ one row per U.S. county with many year-suffixed columns.
 | `<Animal>_N_kg-YYYY` | Nitrogen from that animal group's manure in year `YYYY` (kg), e.g. `Cattle_N_kg-1950`, `Hogs_N_kg-1950`. |
 | `<Animal>_P_kg-YYYY` | Phosphorus from that animal group's manure in year `YYYY` (kg). |
 
+### Cleaned N & P outputs
+
+Produced by `src/02_clean/tabular/agriculture/np-fertilizer-clean.ipynb` and `np-manure-clean.ipynb`. The wide county × year matrices are melted to long format and filtered to Iowa (`state = IA`).
+
+**`data/tabular/02_clean/agriculture/np-fertilizer-clean.csv`** (4,356 rows) — one row per `(county_fips, year, nutrient, source)`:
+
+| Column | Description |
+|---|---|
+| `state_fips` | 2-digit state FIPS (`19`). |
+| `county_fips` | **(key)** 5-digit state+county FIPS. |
+| `county_name` | County name. |
+| `state` | State abbreviation (`IA`). |
+| `year` | Census year (approximately every 5 years, 1950–2017). |
+| `nutrient` | `N` (nitrogen) or `P` (phosphorus). |
+| `source` | Application context: `farm`, `nonfarm`, or `total`. |
+| `value_kg` | Kilograms of nutrient applied as commercial fertilizer. |
+
+**`data/tabular/02_clean/agriculture/np-manure-clean.csv`** (14,850 rows) — one row per `(county_fips, year, animal_category, nutrient)`:
+
+| Column | Description |
+|---|---|
+| `state_fips` | 2-digit state FIPS (`19`). |
+| `county_fips` | **(key)** 5-digit state+county FIPS. |
+| `county_name` | County name. |
+| `state` | State abbreviation (`IA`). |
+| `year` | Census year (approximately every 5 years, 1950–2017). |
+| `animal_category` | Livestock category contributing the manure (`Cattle`, `Hogs`, `Poultry`, `Other`, `Total`). |
+| `nutrient` | `N` or `P`. |
+| `value_kg` | Kilograms of nutrient in manure from that animal category. |
+
+**`data/tabular/02_clean/agriculture/manure-animal-inventory-clean.csv`** (14,850 rows) — head counts by `(county_fips, year, animal)`:
+
+| Column | Description |
+|---|---|
+| `state_fips` | 2-digit state FIPS (`19`). |
+| `county_fips` | **(key)** 5-digit state+county FIPS. |
+| `county_name` | County name. |
+| `state` | State abbreviation (`IA`). |
+| `year` | Census year (approximately every 5 years, 1950–2017). |
+| `animal` | Animal type (e.g. `all cattle and calves`, `beef cows`, `milk cows`, `hogs and pigs`, `broilers`, `layers`, `turkeys`, `sheep and lambs`, `horses and ponies`). |
+| `head_count` | Number of animals. |
+| `adjusted` | `True` when the count uses the USDA slaughter-weight adjustment coefficient. |
+
+**`data/tabular/02_clean/agriculture/manure-weight-coefficients-clean.csv`** (90 rows) — USDA live-weight adjustment coefficients used to compute nutrient loads from raw head counts:
+
+| Column | Description |
+|---|---|
+| `year` | Census year. |
+| `animal` | Animal type (matching `manure-animal-inventory-clean.csv`). |
+| `weight_coef` | Adjustment coefficient relative to the 1992 USDA base. |
+| `usda_live_weight_avg` | USDA average live weight (lbs) for that animal and year. |
+
 ---
 
 ## Conservation BMPs (Iowa NRS)
 
 **Source:** **Iowa Nutrient Reduction Strategy (INRS) / Iowa State University**,
 distributed via the ISU GIS ArcGIS portal. <https://www.nutrientstrategy.iastate.edu/>.
+
+These two files track the adoption and spatial footprint of conservation best-management practices (BMPs) — cover crops, bioreactors, saturated buffers, constructed wetlands, and others — intended to reduce nitrogen and phosphorus losses from Iowa farmland. They provide a direct measure of mitigation effort at the HUC-8 and HUC-12 watershed scale, making them a key control variable when modeling whether observed water-quality improvements are attributable to conservation practice adoption.
 
 `iowa-nrs-tracking.csv` — full INRS tracking export (37 columns); a flexible
 long format where each row is one indicator/practice/funding record.
@@ -558,6 +631,24 @@ long format where each row is one indicator/practice/funding record.
 | `huc8_code` | **(key)** 8-digit HUC watershed code. |
 | `huc8_name` | HUC-8 watershed name. |
 
+### Cleaned BMP outputs
+
+Produced by `src/02_clean/tabular/bmp/iowa-nrs-bmp-huc8-clean.ipynb` and `iowa-nrs-tracking-clean.ipynb`.
+
+**`data/tabular/02_clean/bmp/iowa-nrs-bmp-huc8-clean.csv`** (1,699 rows) — one row per `(huc8_code, year, practice_type)`. The constant `assessment` column is dropped from the raw table:
+
+| Column | Description |
+|---|---|
+| `huc8_code` | **(key)** 8-digit HUC watershed code. |
+| `huc8_name` | HUC-8 watershed name. |
+| `year` | Year of the adoption count. |
+| `practice_type` | Machine code for the BMP (`cover_crop`, `bioreactor_sat_buffer`, `crep_wetland`, `erosion_control`). |
+| `category` | Human-readable practice category label (e.g. `Bioreactors and Saturated Buffers`). |
+| `unit` | Unit of the value (`Acres` or `Number`). |
+| `value` | Adoption acreage or count. |
+
+**`data/tabular/02_clean/bmp/iowa-nrs-tracking-clean.csv`** (20,428 rows) — the full INRS tracking export with 11 sparse or internal columns dropped: `practiceCode`, `mlra`, `mlraName`, `watershedProjectID`, `cityName`, `cityFIP`, `priorityBasinINRSdesignation`, `priorityBasinINRSname`, `priorityBasinINRSid`, `fundingType`, `Order`. All remaining columns match the raw schema; see [raw column documentation above](#conservation-bmps-iowa-nrs).
+
 ---
 
 ## NPDES Compliance & Permits
@@ -567,6 +658,8 @@ long format where each row is one indicator/practice/funding record.
 (Clean Water Act §303(d)/§305(b) assessments, <https://www.epa.gov/waterdata/attains>).
 
 ### Discharge Monitoring Reports (`NPDES_DMRS_FY*.csv`)
+
+These annual files record what each permitted facility actually discharged into Iowa waterways — pollutant concentrations and loads measured at each outfall — alongside the regulatory limits those discharges were required to meet. Each row pairs a specific effluent parameter (e.g., total nitrogen, BOD, E. coli) with the reported measurement value and flags whether a limit was exceeded, making this the point-source pollution counterpart to the diffuse agricultural loading datasets.
 
 One file per federal fiscal year 2015–2025; identical 57-column ICIS-NPDES DMR
 schema. One row per reported limit/measurement on a permit's discharge point.
@@ -633,6 +726,8 @@ schema. One row per reported limit/measurement on a permit's discharge point.
 
 ### ATTAINS Assessments (`NPDES_ATTAINS_AU_SUMMARIES.csv`)
 
+ATTAINS is the EPA's inventory of how well each assessed water body meets its Clean Water Act designated uses — drinking water supply, aquatic life, recreation, and fish consumption. Each row summarizes the overall condition of an assessment unit (a named river segment or lake) and lists the pollutant causes of any impairment, linking those assessments back to specific NPDES permits that discharge into or near that water body.
+
 Water-body assessment status linked to NPDES permits.
 
 | Column | Description |
@@ -656,6 +751,8 @@ Water-body assessment status linked to NPDES permits.
 | `CAUSE_GROUPS_IMPAIRED` | Groups of impairment causes for the water body. |
 
 ### NPDES Catchments (`NPDES_CATCHMENTS.csv`)
+
+This table spatially anchors each NPDES-permitted facility to the NHDPlus stream network by recording the catchment and HUC-12 subwatershed the facility drains into. It is the spatial crosswalk that makes it possible to aggregate point-source discharge loads to the same watershed units used by the water-quality, land-use, and BMP datasets.
 
 Links each NPDES permit to its NHDPlus catchment / HUC-12 watershed.
 
@@ -686,6 +783,8 @@ Links each NPDES permit to its NHDPlus catchment / HUC-12 watershed.
 
 **Source:** **EPA ECHO** facility metadata for Iowa NPDES permits.
 
+These three files describe the identity, location, and industry type of every NPDES-permitted facility in Iowa. The facilities table provides the physical address, coordinates, and county for each permit, while the NAICS and SIC tables classify what each facility does (e.g., municipal wastewater treatment, food processing, livestock operations), enabling analysis of which industry sectors contribute most to point-source loads.
+
 `echo-facilities-iowa.csv`:
 
 | Column | Description |
@@ -712,12 +811,109 @@ Links each NPDES permit to its NHDPlus catchment / HUC-12 watershed.
 | `NAICS_DESC` / `SIC_DESC` | Description of the industry code (e.g. `Water Supply and Irrigation Systems`). |
 | `PRIMARY_INDICATOR_FLAG` | Whether this is the facility's primary industry code (`Y`/`N`). |
 
+### Cleaned NPDES outputs
+
+Produced by notebooks in `src/02_clean/tabular/npdes/`. All tables are Iowa-filtered.
+
+**`data/tabular/02_clean/npdes/npdes-dmrs-clean.csv`** (2,786,182 rows) — the 11 annual DMR files concatenated and reduced from 57 to 26 columns. Internal IDs, redundant lookup fields, and the outer permit-activity hierarchy are dropped:
+
+| Column | Description |
+|---|---|
+| `npdes_id` | **(key)** NPDES permit number. |
+| `fiscal_year` | Federal fiscal year of the DMR report. |
+| `perm_feature_nmbr` | Outfall number (e.g. `001`). |
+| `perm_feature_type_code` | Permitted feature type code. |
+| `limit_set_designator` | Distinguishes multiple limit sets on one outfall. |
+| `parameter_code` | Code for the regulated parameter. |
+| `parameter_desc` | Parameter name (e.g. `Nitrogen, Total`). |
+| `monitoring_location_code` | Where monitoring occurs relative to the outfall. |
+| `statistical_base_code` | Statistical basis of the limit (e.g. daily, monthly). |
+| `monitoring_period_end_date` | End date of the reporting period. |
+| `limit_begin_date` / `limit_end_date` | Effective dates of the effluent limit. |
+| `limit_value_type_code` | Statistical type of the limit (e.g. `Average Monthly`, `Maximum Daily`). |
+| `limit_value` | The permitted limit value. |
+| `limit_value_qualifier` | Qualifier on the limit (e.g. `<=`). |
+| `value_type_code` | Statistical type of the reported value. |
+| `dmr_value` | **The reported measured discharge value.** |
+| `dmr_value_qualifier` | Qualifier on the reported value (e.g. `=`, `<`). |
+| `standard_unit_desc` | Unit of both the limit and reported values. |
+| `nodi_code` | No-Data Indicator code explaining a missing value. |
+| `exceedence_pct` | Percent by which the reported value exceeded its limit. |
+| `violation_code` | Violation classification code, if any. |
+| `days_late` | Days the DMR was submitted late. |
+| `version_nmbr` | Permit version number. |
+| `value_received_date` | Date EPA received the reported value. |
+| `dmr_form_value_id` | Unique ID of the reported value on the DMR form. |
+
+**`data/tabular/02_clean/npdes/npdes-attains-clean.csv`** (1,102 rows) — Iowa-filtered; `STATE` column dropped; column names lowercased and snake-cased. Note: `fishconsumption_use` (present in the raw national file) is not present in the Iowa extract:
+
+| Column | Description |
+|---|---|
+| `registry_id` | EPA Facility Registry ID. |
+| `echo_dfr_url` | URL to the ECHO Detailed Facility Report. |
+| `npdes_id` | **(key)** NPDES permit number. |
+| `reporting_cycle` | Assessment reporting cycle year. |
+| `assessment_unit_id` | **(key)** Unique ID of the assessed water body. |
+| `au_url` | URL to the How's My Waterway report. |
+| `assessment_unit_name` | Name of the assessed water body. |
+| `water_condition` | Overall condition (`Good`, `Impaired`, etc.). |
+| `potential_impairment_parameters` | Parameters potentially causing impairment. |
+| `e90_potential_impairment_parameters` | Potentially impairing parameters tied to effluent exceedances. |
+| `drinkingwater_use` | Support status of the drinking-water designated use. |
+| `ecological_use` | Support status of the aquatic-life/ecological use. |
+| `recreation_use` | Support status of the recreation designated use. |
+| `other_use` | Support status of other designated uses. |
+| `cause_groups_impaired` | Groups of impairment causes. |
+
+**`data/tabular/02_clean/npdes/npdes-catchments-clean.csv`** (2,432 rows) — Iowa-filtered; column names lowercased and snake-cased; `STATECODE` dropped:
+
+| Column | Description |
+|---|---|
+| `npdes_id` | **(key)** NPDES permit number. |
+| `sub_id` | Sub-facility identifier. |
+| `permit_type_code` / `permit_type_desc` | Permit type code and description. |
+| `latitude` / `longitude` | Facility coordinates (NAD83). |
+| `nhdplusid` | **(key)** NHDPlus catchment identifier. |
+| `wbd_huc12` | **(key)** 12-digit HUC of the containing subwatershed. |
+| `wbd_huc12_name` | Name of the HUC-12 subwatershed. |
+| `reachcode` | NHD reach code of the associated stream. |
+| `gnis_name` | GNIS name of the stream feature. |
+| `catchment_huc12` | HUC-12 of the catchment. |
+| `area_sqkm` | Catchment area (km²). |
+| `length_km` | Flowline length (km). |
+| `navigable` / `headwater` / `coastal` / `tidal` / `alaskan` | Boolean NHDPlus feature flags. |
+
+**`data/tabular/02_clean/npdes/echo-facilities-clean.csv`** (2,216 rows) — Iowa NPDES facilities; `impaired_waters` renamed to `impaired_303d`:
+
+| Column | Description |
+|---|---|
+| `npdes_id` | **(key)** NPDES permit number. |
+| `facility_interest_id` | ICIS internal facility ID. |
+| `facility_uin` | EPA Facility Registry Service (FRS) universal ID. |
+| `facility_name` | Facility name. |
+| `facility_type_code` | Facility type code (e.g. `POTW`). |
+| `address` / `city` / `zip` | Physical address. |
+| `county_fips` | County FIPS code (state-prefixed, e.g. `IA111`). |
+| `latitude` / `longitude` | Facility coordinates. |
+| `impaired_303d` | Flag for whether the facility discharges to a §303(d)-listed impaired water body. |
+
+**`data/tabular/02_clean/npdes/echo-naics-clean.csv`** (1,668 rows) and **`echo-sics-clean.csv`** (1,693 rows) — industry classifications normalized from the raw `UPPERCASE` schema:
+
+| Column | Description |
+|---|---|
+| `npdes_id` | **(key)** NPDES permit number. |
+| `code` | NAICS or SIC classification code. |
+| `description` | Description of the code (e.g. `Water Supply and Irrigation Systems`). |
+| `is_primary` | Whether this is the facility's primary industry classification (boolean). |
+
 ---
 
 ## Streamflow
 
 **Source:** **USGS National Water Information System (NWIS) / Water Data for the
 Nation.** <https://waterdata.usgs.gov/>.
+
+These two files record how much water is moving through Iowa streams on a daily basis, as measured by USGS stream gauges. Streamflow is a critical covariate for water-quality prediction because it controls dilution (high flow lowers concentration even when pollutant loads are constant) and because storm-driven flow pulses flush nutrients from agricultural fields into waterways.
 
 `usgs-iowa-discharge.csv` — daily streamflow values:
 
@@ -740,6 +936,14 @@ Nation.** <https://waterdata.usgs.gov/>.
 | `huc8` | 8-digit HUC watershed code. **(key)** |
 | `county_fips` | County FIPS code. |
 
+### Cleaned streamflow outputs
+
+Produced by `src/02_clean/tabular/streamflow/usgs-iowa-discharge-clean.ipynb` and `usgs-iowa-gauges-clean.ipynb`. Both tables retain the same columns as their raw counterparts (see [raw schema above](#streamflow)); dates are parsed to `YYYY-MM-DD`, numeric fields cast to the correct types, and rows with invalid site numbers removed.
+
+**`data/tabular/02_clean/streamflow/usgs-iowa-discharge-clean.csv`** (556,850 rows) — daily discharge time series; schema identical to raw (`site_no`, `date`, `discharge_cfs`, `discharge_cd`).
+
+**`data/tabular/02_clean/streamflow/usgs-iowa-gauges-clean.csv`** (703 rows) — gauge metadata; schema identical to raw (`site_no`, `station_name`, `latitude`, `longitude`, `drain_area_sqmi`, `huc8`, `county_fips`).
+
 ---
 
 ## Soil (SSURGO)
@@ -747,6 +951,8 @@ Nation.** <https://waterdata.usgs.gov/>.
 **Source:** **USDA-NRCS SSURGO** via Web Soil Survey / Soil Data Access.
 <https://websoilsurvey.nrcs.usda.gov/>. `ssurgo-iowa-attributes.csv` — one row per
 soil map-unit component.
+
+This table describes the physical properties of Iowa soils at the map-unit level — drainage class, hydrologic soil group, saturated hydraulic conductivity, and available water capacity. These properties govern how quickly rainfall infiltrates or runs off into streams, making them essential for explaining spatial variation in nutrient and sediment delivery to waterways independently of land-use patterns.
 
 | Column | Description |
 |---|---|
@@ -761,6 +967,25 @@ soil map-unit component.
 | `ksat_r_mean` | Representative saturated hydraulic conductivity (Ksat), mean (µm/s). |
 | `awc_r_mean` | Representative available water capacity, mean (cm water per cm soil). |
 
+### Cleaned soil output
+
+Produced by `src/02_clean/tabular/soil/ssurgo-iowa-attributes-clean.ipynb`. The dominant component per map unit is retained (one row per `mukey`); column names are expanded from abbreviated SSURGO codes to readable snake-case names:
+
+**`data/tabular/02_clean/soil/ssurgo-iowa-attributes-clean.csv`** (10,572 rows):
+
+| Column | Description |
+|---|---|
+| `mukey` | **(key)** SSURGO map-unit key; joins to the soil polygon shapefile. |
+| `survey_area` | Soil survey area symbol (was `areasymbol`). |
+| `map_unit_symbol` | Map-unit symbol as shown on soil survey maps (was `musym`). |
+| `map_unit_name` | Map-unit description (was `muname`). |
+| `dominant_component` | Name of the dominant soil series within the map unit (was `compname`). |
+| `dominant_component_pct` | Percent of the map unit the dominant component represents (was `comppct_r`). |
+| `hydrologic_group` | Hydrologic soil group A–D (was `hydgrp`). |
+| `drainage_class` | Drainage class (was `drainagecl`). |
+| `ksat_mean` | Representative saturated hydraulic conductivity, mean µm/s (was `ksat_r_mean`). |
+| `awc_mean` | Representative available water capacity, mean cm/cm (was `awc_r_mean`). |
+
 ---
 
 ## Land Use (Cropland Data Layer)
@@ -769,10 +994,32 @@ soil map-unit component.
 to HUC-12 watersheds. <https://nassgeodata.gmu.edu/CropScape/>. `cdl-huc12-fractions.csv`
 — one row per HUC-12 per year; fractions sum across the land-cover classes.
 
+This dataset captures what fraction of each HUC-12 watershed is covered by corn, soybeans, other crops, developed land, forest, pasture, wetland, and open water — updated annually from satellite-derived 30 m land-cover maps. Land-use composition is one of the strongest predictors of nutrient loading: watersheds with high row-crop fractions export far more nitrogen and phosphorus than forested or wetland-dominated watersheds.
+
 | Column | Description |
 |---|---|
 | `year` | Year of the CDL classification (2015–2025). |
 | `HUC_12` | **(key)** 12-digit HUC subwatershed code. |
+| `pct_corn` | Fraction of the watershed classified as corn. |
+| `pct_soybean` | Fraction classified as soybean. |
+| `pct_other_crops` | Fraction in other crop types. |
+| `pct_developed` | Fraction in developed/urban cover. |
+| `pct_forest` | Fraction in forest. |
+| `pct_pasture` | Fraction in pasture/grassland. |
+| `pct_wetland` | Fraction in wetland. |
+| `pct_open_water` | Fraction in open water. |
+| `pct_row_crops` | Combined fraction in row crops (corn + soybean + similar). |
+
+### Cleaned land use output
+
+Produced by `src/02_clean/tabular/landuse/cdl-huc12-fractions-clean.ipynb`. The `HUC_12` key is renamed to `huc12_code` for consistency with the rest of the pipeline; fractions and row counts are range-validated.
+
+**`data/tabular/02_clean/landuse/cdl-huc12-fractions-clean.csv`** (18,854 rows) — one row per `(huc12_code, year)`:
+
+| Column | Description |
+|---|---|
+| `huc12_code` | **(key)** 12-digit HUC subwatershed code (was `HUC_12`). |
+| `year` | CDL classification year (2015–2025). |
 | `pct_corn` | Fraction of the watershed classified as corn. |
 | `pct_soybean` | Fraction classified as soybean. |
 | `pct_other_crops` | Fraction in other crop types. |
@@ -793,11 +1040,27 @@ annual county population estimates (`Iowa_Census-2010-2019.xlsx` intercensal;
 `Iowa-Census-2020-2025.xlsx` vintage 2020s). These are formatted PEP tables, not
 flat CSVs: a few title rows precede the data, then:
 
+These workbooks provide annual mid-year population estimates for each Iowa county from 2010 through 2025. Population is a proxy for urban wastewater load — a county with rapidly growing cities will have increasing municipal sewage discharge even if land use is otherwise unchanged — and can help separate point-source from non-point-source contributions to water-quality trends over time.
+
 | Column | Description |
 |---|---|
 | `Geographic Area` | **(key)** County (or place) name; the leading `.` prefix is the Census formatting convention. |
 | `April 1, 20X0 Estimates Base` | The decennial census base population the annual series is anchored to. |
 | `<year>` (one column per year) | Mid-year (July 1) population estimate for that county for each year in the workbook's range (2010–2019 or 2020–2025). |
+
+### Cleaned census outputs
+
+Produced by `src/02_clean/tabular/census/census-population-2010-2020-clean.ipynb` and `census-population-2020-2025-clean.ipynb`. The wide Excel tables are melted from one-column-per-year to long format.
+
+**`data/tabular/02_clean/census/iowa-census-population-2010-2020-clean.csv`** (11,304 rows) and **`iowa-census-population-2020-2025-clean.csv`** (6,573 rows) — both share the same schema, one row per `(place, year, estimate_type)`:
+
+| Column | Description |
+|---|---|
+| `place` | City name. |
+| `place_type` | `city`. |
+| `year` | Year of the estimate (2010–2020 or 2020–2025). |
+| `estimate_type` | `estimates_base` (April 1 decennial census anchor) or `july_estimate` (mid-year annual estimate). |
+| `population` | Population count. |
 
 ---
 
@@ -806,6 +1069,8 @@ flat CSVs: a few title rows precede the data, then:
 **Source:** **USGS/EPA NHDPlus V2.1** and the **Watershed Boundary Dataset (WBD)**
 (<https://www.epa.gov/waterdata/nhdplus-national-data>), plus the **NRCS SSURGO**
 soil polygons. Shapefiles (`.shp` + `.dbf` attributes).
+
+These vector layers define the geographic scaffolding that all other datasets are joined to: HUC-12 watershed polygons delineate the contributing areas used for land-use and BMP aggregation, the NHDPlus gauge-location shapefile snaps USGS stream gauges onto the stream network for accurate upstream-area calculations, and the SSURGO soil polygons provide the spatial extent to aggregate tabular soil properties to watersheds. Together they are the spatial glue connecting measurements taken at points to the landscape units used for modeling.
 
 `wbd-huc12-iowa/WBDSnapshot_Iowa.shp` — HUC-12 watershed boundary polygons:
 
@@ -871,9 +1136,13 @@ water-quality classification: **24** images in `Clean-samples/` and **16** in
 `Dirty-samples/`. The folder name is the class label; each file is a photograph of
 water.
 
+This image set supports a computer-vision sub-task: classifying whether a photograph of water looks visibly clean or polluted. With only 40 labeled photos it is far too small for standalone deep learning, but it can be used for transfer-learning experiments or to demonstrate a multimodal pipeline that fuses visual signals with the tabular sensor data.
+
 **Text** (`data/text/raw/`) — **20** plain-text narrative summaries, one per Iowa
 city (Ankeny, Bettendorf, Cedar Rapids, Coralville, Council Bluffs, Davenport, Des
 Moines, Eldora, Fort Dodge, Iowa City, Iowa Falls, Johnston, Marengo, Marion,
 Marshalltown, Mason City, Ottumwa, Urbandale, Waterloo, Waukee). Each file is
 free-form prose covering the city's geography, history, climate, and water
 context — not a columnar dataset.
+
+These narratives provide unstructured contextual knowledge about the cities in the study area — their geographic setting, water sources, and local environmental history. They are intended for retrieval-augmented generation (RAG) or LLM-based question-answering tasks where qualitative city context enriches otherwise purely quantitative model outputs.
