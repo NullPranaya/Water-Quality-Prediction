@@ -40,6 +40,7 @@ together are flagged as **(key)**.
 - [Census / Demographics](#census--demographics)
   - [Cleaned census outputs](#cleaned-census-outputs)
 - [Spatial Layers](#spatial-layers)
+  - [Cleaned spatial outputs](#cleaned-spatial-outputs)
 - [Imagery & Text](#imagery--text)
 
 ---
@@ -91,12 +92,18 @@ exclude the header; `MB` is on-disk file size (1 MB = 1024 KB).
 | NHDPlus WBD HUC-12 boundaries | `spatial/01_raw/nhdplus/wbd-huc12-iowa/` | 5 (shapefile bundle) | 37.62 |
 | NHDPlus GageLoc | `spatial/01_raw/nhdplus/gage-loc/` | 5 (shapefile bundle) | 20.95 |
 | NHDPlus Catchment↔HUC-12 crosswalk | `spatial/01_raw/nhdplus/crosswalk/` | 1 | 69.46 |
-| SSURGO soil map-unit polygons | `spatial/01_raw/ssurgo/` | 5 (shapefile bundle) | 212.12 |
+| SSURGO soil map-unit polygons | `spatial/01_raw/ssurgo/` | 5 (shapefile bundle) | 4,580 |
 | NASS CDL rasters (2015–2025) | `spatial/01_raw/cdl/cdl_iowa_*.tif` | 11 | 342.38 |
 | Water-quality training images | `images/water-images/train/` | 40 (24 clean + 16 dirty) | 0.59 |
 | City water summaries | `text/raw/` | 20 | 0.10 |
 
-**Approximate raw download total: ~3.0 GB** (~2.2 GB tabular + ~0.8 GB spatial/imagery/text).
+> The SSURGO polygon layer covers all 99 Iowa counties (2,712,435 polygons,
+> 11,208 distinct map units) as of 2026-07-03. It previously covered only 5
+> counties on disk — the download notebook hardcoded a single WSS export date
+> that only matched those 5 counties' certification date and returned HTTP 400
+> for the rest; it now fetches each county's actual date from SDA.
+
+**Approximate raw download total: ~7.1 GB** (~2.1 GB tabular + ~4.9 GB spatial/imagery/text).
 
 ---
 
@@ -108,7 +115,7 @@ distinguishes the originating system (`NWIS` = USGS, `STORET` = EPA/state).
 
 ### EPA Water Quality Measurements (`epa-wq.csv`)
 
-This table records individual chemical, physical, and biological measurements collected at Iowa stream and lake monitoring stations. Each row captures a single analyte result — such as nitrate concentration, dissolved oxygen, or E. coli count — along with the sampling date, depth, method, and quality flags. It is the primary response-variable source for the project, linking ~971K observations across 19 standardized parameters to specific locations and times.
+This table records individual chemical, physical, and biological measurements collected at Iowa stream and lake monitoring stations. Each row captures a single analyte result — such as nitrate concentration, dissolved oxygen, or E. coli count — along with the sampling date, depth, method, and quality flags. It is the primary response-variable source for the project, linking ~971K observations across 23 standardized parameters to specific locations and times.
 
 Long table, one row per individual measurement (~971K rows). Full WQX result
 schema (81 columns).
@@ -247,11 +254,11 @@ Station metadata, one row per monitoring location (~1,667 stations, 37 columns).
 
 `data/tabular/02_clean/water-quality/epa-wq-clean.csv` — wide table, one row per
 `MonitoringLocationIdentifier` + `ActivityStartDateTime`, with a
-`<parameter>_value` / `<parameter>_unit` column pair for each of 19 standardized
+`<parameter>_value` / `<parameter>_unit` column pair for each of 23 standardized
 parameters (temperature, DO, pH, nitrate, nitrite, nitrate+nitrite, ammonia,
 Kjeldahl N, orthophosphate, phosphate-P, total P, chloride, sulfate, specific
-conductance, TDS, TSS, turbidity, E. coli, chlorophyll a). Values are unit-
-standardized and range-validated. `data/tabular/02_clean/water-quality/epa-stations-clean.csv`
+conductance, TDS, TSS, turbidity, E. coli, chlorophyll a, microcystin, atrazine,
+alkalinity, hardness). Values are unit-standardized and range-validated. `data/tabular/02_clean/water-quality/epa-stations-clean.csv`
 is the station table reduced to the join/identity columns
 (`OrganizationIdentifier`, `MonitoringLocationIdentifier`, `MonitoringLocationName`,
 `MonitoringLocationTypeName`, `HUCEightDigitCode`, `LatitudeMeasure`,
@@ -1126,6 +1133,52 @@ These vector layers define the geographic scaffolding that all other datasets ar
 Also present: `cdl/cdl_iowa_YYYY.tif` (2015–2025) — the raw 30 m CDL land-cover
 rasters underlying the HUC-12 fractions; `nhdplus/crosswalk/` — the NHDPlus
 catchment ↔ WBD HUC-12 crosswalk table linking COMIDs to HUC-12 codes.
+
+### Cleaned spatial outputs
+
+Produced by `src/02_clean/spatial/nhdplus/wbd-huc12-crosswalk-clean.ipynb`, which
+reprojects the WBD HUC-12 polygons to WGS84 and spatially joins each EPA
+monitoring station to the watershed polygon it falls within.
+
+**`data/spatial/02_clean/nhdplus/wbd-huc12-station-crosswalk-clean.csv`**
+(1,666 rows) — one row per `MonitoringLocationIdentifier`, giving the HUC-12/10/8
+watershed it sits in. This is the crosswalk the future land-use/BMP merge step
+uses to attach `cdl-huc12-fractions-clean.csv` and `iowa-nrs-bmp-huc8-clean.csv`
+to individual stations.
+
+| Column | Description |
+|---|---|
+| `MonitoringLocationIdentifier` | **(key)** EPA WQX station ID; joins to the water-quality and station tables. |
+| `huc12_code` | **(key)** 12-digit HUC of the watershed containing the station; joins to `cdl-huc12-fractions-clean.csv`. |
+| `huc12_name` | HUC-12 watershed name. |
+| `huc10_code` | 10-digit HUC (parent of `huc12_code`). |
+| `huc8_code` | **(key)** 8-digit HUC (parent of `huc10_code`); joins to `iowa-nrs-bmp-huc8-clean.csv` and matches the station table's own `HUCEightDigitCode` (verified during cleaning — 0 mismatches). |
+| `huc12_acres` | Watershed polygon area (acres). |
+
+Produced by `src/02_clean/spatial/ssurgo/mapunit-crosswalk-clean.ipynb`, which
+spatially joins each EPA monitoring station to the SSURGO soil map-unit polygon
+it falls within (falling back to the nearest polygon, within 500 m, for the
+handful of stations that sit just outside the mapped extent — typically
+in-stream/lake sampling points).
+
+**`data/spatial/02_clean/ssurgo/ssurgo-mapunit-station-crosswalk-clean.csv`**
+(1,666 rows) — one row per `MonitoringLocationIdentifier`, giving the soil map
+unit it sits in. This is the crosswalk the future soil merge step uses to
+attach `ssurgo-iowa-attributes-clean.csv` to individual stations. **Coverage
+note:** because stations sit in or next to streams/lakes, only ~1,077 of 1,666
+(65%) resolve to a `mukey` present in `ssurgo-iowa-attributes-clean.csv` — the
+rest land in non-soil water map units (`map_unit_symbol` `W`/`RIVER`/`LAKE`)
+that carry no soil component data. That's an expected property of station
+placement, not a join defect.
+
+| Column | Description |
+|---|---|
+| `MonitoringLocationIdentifier` | **(key)** EPA WQX station ID; joins to the water-quality and station tables. |
+| `mukey` | **(key)** SSURGO map-unit key; joins to `ssurgo-iowa-attributes-clean.csv` (~65% coverage — see note above). |
+| `map_unit_symbol` | Map-unit symbol as shown on soil survey maps; `W`/`RIVER`/`LAKE` indicate non-soil water map units. |
+| `survey_area` | County soil survey area symbol (e.g. `IA181`) the polygon belongs to. |
+| `match_method` | `within` (station falls inside the polygon) or `nearest` (fallback snap for the ~5 stations outside the mapped extent). |
+| `match_distance_m` | Distance to the matched polygon in meters; `0` for `within` matches. |
 
 ---
 
