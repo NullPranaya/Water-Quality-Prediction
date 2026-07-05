@@ -70,6 +70,7 @@ Preliminary merges: both (or all) inputs come straight from `02_clean` /
 | **P1** | `wq-daily-environment-clean.csv` | `epa-wq-clean.csv` + `epa-stations-clean.csv` + `prism-iowa-climate-clean.csv` + `isu-climate-clean.csv` + `usgs-iowa-discharge-clean.csv` + `usgs-iowa-gauges-clean.csv` | station id (direct) for WQ/stations/PRISM; **nearest-neighbor spatial match** on lat/lon for ISU climate and USGS discharge, keyed on date | 1 row / WQ measurement event (station + timestamp) |
 | **P2** | `station-geo-soil-clean.csv` | `epa-stations-clean.csv` + `wbd-huc12-station-crosswalk-clean.csv` (spatial) + `ssurgo-mapunit-station-crosswalk-clean.csv` (spatial) + `ssurgo-iowa-attributes-clean.csv` | `MonitoringLocationIdentifier`, then `mukey` | 1 row / station |
 | **P3** | `county-agriculture-merged.csv` | `crop-yields-clean.csv` + `livestock-inventory-clean.csv` + `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `manure-animal-inventory-clean.csv` — each **pivoted wide** first (commodity/statistic/animal/nutrient values → columns) to avoid a many-rows-per-county-year fan-out | `county_fips` + `year` | 1 row / county + year |
+| **P3b** | `county-nutrient-loading-clean.csv` | `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `livestock-inventory-clean.csv` (cattle/hog head counts) | derived: **backward as-of** match on `county_fips` + `year`, plus a partial manure refresh (see §6) | 1 row / county + year, **dense for 2015–2025** |
 | **P4** | `state-chemical-spending-merged.csv` | `crop-chemical-application-clean.csv` + `chemical-fertilizer-feed-spending-clean.csv`, pivoted wide | `state_fips` + `year` | 1 row / year (IA only — no spatial variation) |
 | **P5** | `huc12-landuse-bmp-merged.csv` | `cdl-huc12-fractions-clean.csv` + `iowa-nrs-bmp-huc8-clean.csv` (pivoted wide by `practice_type`) | `huc8_code = left(huc12_code, 8)` + `year` | 1 row / HUC-12 + year (BMP values are broadcast to every child HUC-12 of a HUC-8 — see §6) |
 | **P6** | `npdes-facility-merged.csv` | `npdes-dmrs-clean.csv` (**aggregated** to `npdes_id` + `fiscal_year` — e.g. total exceedances, violation count, mean `dmr_value` per parameter — to avoid the per-outfall-per-parameter fan-out) + `npdes-catchments-clean.csv` + `echo-facilities-clean.csv` + `echo-naics-clean.csv` + `echo-sics-clean.csv` + `npdes-attains-clean.csv` | `npdes_id` | 1 row / permit + fiscal year, carrying `wbd_huc12`/`huc8` for downstream spatial joins |
@@ -84,7 +85,16 @@ Both inputs are `03a` outputs, or one `03a` output + one `02_clean` table.
 | # | Output | Inputs | Join | Grain |
 |---|---|---|---|---|
 | **S1** | `wq-geo-soil-daily-clean.csv` | P1 (`03a`) + P2 (`03a`) | `MonitoringLocationIdentifier` | 1 row / measurement event, now carrying HUC-12/10/8, `mukey`, and soil attributes alongside daily climate/streamflow |
-| **S2** | `station-year-context-clean.csv` | P2 (`03a`, gives `huc12_code`/`huc8_code`/derived `county_fips` per station) + P5 (`03a`, HUC-12 land use/BMP) + P6 (`03a`, NPDES facility context aggregated to `huc12`/`huc8` + `fiscal_year`) + P3 (`03a`, county agriculture) + P4 (`03a`, state chemical spending) | `huc12_code`/`huc8_code` + `year` for the watershed layers; derived `county_fips` + `year` for agriculture; `year` alone for state spending | 1 row / station + year — every slow-moving/annual covariate broadcast to the station via its watershed, county, and state membership |
+| **S2** | `station-year-context-clean.csv` | P2 (`03a`, gives `huc12_code`/`huc8_code`/derived `county_fips` per station) + P5 (`03a`, HUC-12 land use/BMP) + P6 (`03a`, NPDES facility context aggregated to `huc12`/`huc8` + `fiscal_year`) + **P3** (`03a`, county **crop/livestock** — annual, already dense) + **P3b** (`03a`, county **N&P fertilizer/manure** — as-of-matched & refreshed, dense for 2015–2025) + P4 (`03a`, state chemical spending) | `huc12_code`/`huc8_code` + `year` for the watershed layers; derived `county_fips` + `year` for agriculture; `year` alone for state spending | 1 row / station + year — every slow-moving/annual covariate broadcast to the station via its watershed, county, and state membership |
+
+> **Agriculture split across P3 / P3b.** S2 draws the annual, natively-dense
+> crop-yield and livestock columns from **P3**, but the N&P fertilizer/manure
+> columns from **P3b** — *not* from P3's raw N&P columns, which are quinquennial
+> and effectively empty inside 2015–2025 (only 2017 has a native value). Joining
+> P3's raw N&P on exact `year` would null out ~91% of station-years; P3b is the
+> as-of-matched, 2015–2025-dense version built for exactly this join. Pull only
+> the `cropyield__*` / `livestock__*` blocks from P3 and the `npfert__*` /
+> `npmanure__*` blocks (plus provenance columns) from P3b.
 
 ---
 
@@ -122,9 +132,11 @@ spatial/02_clean/ssurgo/ssurgo-mapunit-station-x ────┼──▶ P2 sta
                                                                                           │                                             ├──▶ T1 epa-full-merged.csv
 02_clean/agriculture/{crop-yields,livestock,np-fert,np-manure,manure-animal-inv} ────────▶ P3 county-agriculture-merged.csv ─┤          │
                                                                                                                               │          │
+02_clean/agriculture/{np-fert,np-manure,livestock} ──[backward as-of + partial manure refresh]──▶ P3b county-nutrient-loading-clean.csv ┤ │
+                                                                                                                              │          │
 02_clean/agriculture/{crop-chem-app,fert-feed-spending} ─────────────────────────────────▶ P4 state-chemical-spending-merged.csv ┤     │
                                                                                                                               │          │
-                                          (P2 + P5 + P6 + P3 + P4) ──────────────────▶ S2 station-year-context-clean.csv ────┴──────────┘
+                              (P2 + P5 + P6 + P3[crop/livestock] + P3b[N&P] + P4) ────▶ S2 station-year-context-clean.csv ────┴──────────┘
 
 02_clean/census/*.csv (2 files) ──────────────────────▶ P7 census-population-merged.csv   [terminal — see §6, not wired into T1]
 ```
@@ -144,14 +156,39 @@ spatial/02_clean/ssurgo/ssurgo-mapunit-station-x ────┼──▶ P2 sta
   every child HUC-12 — it is not a true sub-division of adoption within the
   HUC-8, just a repetition. Acceptable for now but worth flagging in any
   BMP-effect analysis.
-- **Ag temporal overlap is narrow.** `np-fertilizer-clean.csv` / `np-manure-clean.csv`
-  run in ~5-year steps from 1950–2017, while `crop-yields-clean.csv` /
-  `livestock-inventory-clean.csv` run annually 2015–2025. `P3`'s outer join on
-  `county_fips` + `year` will be sparse outside the ~2015–2017 overlap window.
+- **Ag temporal overlap is narrow — resolved for N&P by `P3b`.**
+  `np-fertilizer-clean.csv` / `np-manure-clean.csv` run in ~5-year steps from
+  1950–2017, while `crop-yields-clean.csv` / `livestock-inventory-clean.csv` run
+  annually 2015–2025. `P3`'s outer join is therefore sparse: inside the WQ window
+  2015–2025 **only 2017 has a native N&P value**, so a straight exact-`year` join
+  to station-years would leave the N&P/manure columns null for ~91% of rows.
+  `P3b` fixes this by producing a 2015–2025-dense nutrient table:
+  - **Backward as-of matching** — each year `Y` is anchored to the most recent
+    census year `≤ min(Y, 2017)` (2015–2016 → 2012, 2018–2025 carry 2017),
+    recorded in `np_base_year` / `np_years_stale`. Backward (`≤`) avoids using
+    future census data to represent an earlier year.
+  - **Fertilizer** → pure carry-forward (no county-resolution recent driver;
+    `total` recomputed as `farm + nonfarm` because the raw `total` source is null
+    at the 2012/2017 base years).
+  - **Partial manure refresh** — the 2017 baseline is scaled by observed
+    head-count change (`manure_2017 × head_Y / head_2017`, holding Falcone's 2017
+    per-head nutrient rate fixed): **cattle** refreshed annually from
+    `CATTLE, INCL CALVES` SURVEY inventory; **hogs** refreshed only at the 2022
+    census step (annual county hog inventory isn't published) and carried from
+    there; **poultry/other** frozen at 2017. `Total` is recomputed from the
+    refreshed components. Provenance flags: `manure_cattle_refreshed`,
+    `manure_hogs_refreshed`, `cattle_head_ratio`, `hog_head_ratio`.
+  - **Known limitation:** no *annual* hog/CAFO trend — hogs move in a single 2022
+    step, not a curve.
+
+  The raw quinquennial N&P columns in `P3` are retained as an archival/reference
+  view; `S2` should draw N&P from `P3b`, not `P3` (see §3 note).
 - **`manure-weight-coefficients-clean.csv` is excluded** — it's the coefficient
   table already used upstream to produce the adjusted head counts in
   `manure-animal-inventory-clean.csv`; merging it again would double-apply the
-  adjustment.
+  adjustment. It is also *not* usable to convert head counts into nutrient mass
+  for `P3b`: it holds **live-weight** factors, not kg-N/kg-P excretion per head —
+  which is why `P3b` ratio-scales against Falcone's own 2017 N&P figures instead.
 - **`iowa-nrs-tracking-clean.csv` is excluded from the default path** in favor
   of the smaller, already-tidy `iowa-nrs-bmp-huc8-clean.csv`. The tracking
   export is a richer superset (funding source, practice-level detail,

@@ -331,9 +331,27 @@ one-row-per-station-day and are range-validated against generous physical bounds
 modeling step to handle rather than imputed here.
 
 **`data/tabular/02_clean/climate/isu-climate-clean.csv`** (~221K station-day rows)
-— the ISU/IEM feed with its **same 20-column schema** (keyed `station` + `day`,
-see the [raw table above](#isu--iem-climate--isu-climatecsv)); every variable
-range-validated, all rows retained.
+— the ISU/IEM feed, keyed `station` + `day`, every variable range-validated, all
+rows retained. Schema matches the [raw table above](#isu--iem-climate--isu-climatecsv)
+except that every temperature-bearing column is **converted from °F to °C and
+renamed with a `_c` suffix**, matching the `prism_tmax_c`-style convention used
+by the PRISM cleaner:
+
+| Column | Description |
+|---|---|
+| `max_temp_c` | Daily maximum air temperature (°C). |
+| `min_temp_c` | Daily minimum air temperature (°C). |
+| `max_dewpoint_c` | Daily maximum dew-point temperature (°C). |
+| `min_dewpoint_c` | Daily minimum dew-point temperature (°C). |
+| `min_feel_c` | Daily minimum "feels-like" temperature (°C) — wind chill / heat index. |
+| `avg_feel_c` | Daily mean "feels-like" temperature (°C). |
+| `max_feel_c` | Daily maximum "feels-like" temperature (°C). |
+| `climo_high_c` | Climatological normal high temperature for that calendar day (°C). |
+| `climo_low_c` | Climatological normal low temperature for that calendar day (°C). |
+
+All other columns (`precip_in`, `avg_wind_speed_kts`, `avg_wind_drct`, `min_rh`,
+`avg_rh`, `max_rh`, `snow_in`, `snowd_in`, `max_wind_speed_kts`) are unchanged
+from the raw schema.
 
 **`data/tabular/02_clean/climate/prism-iowa-climate-clean.csv`** (~4.1M
 station-day rows) — one row per `station_id` + `date`, **de-duplicated so the
