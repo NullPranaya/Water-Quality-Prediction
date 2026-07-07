@@ -65,16 +65,21 @@ input inventory for the merge stages that follow.
 Preliminary merges: both (or all) inputs come straight from `02_clean` /
 `spatial/02_clean`. No dependency on any other merge output.
 
+Outputs are written to `data/03a_merge_primary/` (at the `data/` root, **not**
+under `data/tabular/`); secondary/tertiary tiers write to
+`data/03b_merge_secondary/` and `data/03c_merge_tertiary/`. Output filenames
+carry **no `-clean`/`-merged` suffix** — the bare stage name plus `.csv`.
+
 | # | Output | Inputs (all `02_clean`) | Join | Grain |
 |---|---|---|---|---|
-| **P1** | `wq-daily-environment-clean.csv` | `epa-wq-clean.csv` + `epa-stations-clean.csv` + `prism-iowa-climate-clean.csv` + `isu-climate-clean.csv` + `usgs-iowa-discharge-clean.csv` + `usgs-iowa-gauges-clean.csv` | station id (direct) for WQ/stations/PRISM; **nearest-neighbor spatial match** on lat/lon for ISU climate and USGS discharge, keyed on date | 1 row / WQ measurement event (station + timestamp) |
-| **P2** | `station-geo-soil-clean.csv` | `epa-stations-clean.csv` + `wbd-huc12-station-crosswalk-clean.csv` (spatial) + `ssurgo-mapunit-station-crosswalk-clean.csv` (spatial) + `ssurgo-iowa-attributes-clean.csv` | `MonitoringLocationIdentifier`, then `mukey` | 1 row / station |
-| **P3** | `county-agriculture-merged.csv` | `crop-yields-clean.csv` + `livestock-inventory-clean.csv` + `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `manure-animal-inventory-clean.csv` — each **pivoted wide** first (commodity/statistic/animal/nutrient values → columns) to avoid a many-rows-per-county-year fan-out | `county_fips` + `year` | 1 row / county + year |
-| **P3b** | `county-nutrient-loading-clean.csv` | `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `livestock-inventory-clean.csv` (cattle/hog head counts) | derived: **backward as-of** match on `county_fips` + `year`, plus a partial manure refresh (see §6) | 1 row / county + year, **dense for 2015–2025** |
-| **P4** | `state-chemical-spending-merged.csv` | `crop-chemical-application-clean.csv` + `chemical-fertilizer-feed-spending-clean.csv`, pivoted wide | `state_fips` + `year` | 1 row / year (IA only — no spatial variation) |
-| **P5** | `huc12-landuse-bmp-merged.csv` | `cdl-huc12-fractions-clean.csv` + `iowa-nrs-bmp-huc8-clean.csv` (pivoted wide by `practice_type`) | `huc8_code = left(huc12_code, 8)` + `year` | 1 row / HUC-12 + year (BMP values are broadcast to every child HUC-12 of a HUC-8 — see §6) |
-| **P6** | `npdes-facility-merged.csv` | `npdes-dmrs-clean.csv` (**aggregated** to `npdes_id` + `fiscal_year` — e.g. total exceedances, violation count, mean `dmr_value` per parameter — to avoid the per-outfall-per-parameter fan-out) + `npdes-catchments-clean.csv` + `echo-facilities-clean.csv` + `echo-naics-clean.csv` + `echo-sics-clean.csv` + `npdes-attains-clean.csv` | `npdes_id` | 1 row / permit + fiscal year, carrying `wbd_huc12`/`huc8` for downstream spatial joins |
-| **P7** | `census-population-merged.csv` | `iowa-census-population-2010-2020-clean.csv` concatenated with `iowa-census-population-2020-2025-clean.csv` (dedup overlap year 2020) | schema union | 1 row / city + year + estimate type — **held here, not merged further** (see §6) |
+| **P1** | `wq-daily-environment.csv` | `epa-wq-clean.csv` + `epa-stations-clean.csv` + `prism-iowa-climate-clean.csv` + `isu-climate-clean.csv` + `usgs-iowa-discharge-clean.csv` + `usgs-iowa-gauges-clean.csv` | station id (direct) for WQ/stations/PRISM; **nearest-neighbor spatial match** on lat/lon for ISU climate and USGS discharge, keyed on date | 1 row / WQ measurement event (station + timestamp) |
+| **P2** | `station-geo-soil.csv` | `epa-stations-clean.csv` + `wbd-huc12-station-crosswalk-clean.csv` (spatial) + `ssurgo-mapunit-station-crosswalk-clean.csv` (spatial) + `ssurgo-iowa-attributes-clean.csv` | `MonitoringLocationIdentifier`, then `mukey` | 1 row / station |
+| **P3** | `county-agriculture.csv` | `crop-yields-clean.csv` + `livestock-inventory-clean.csv` + `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `manure-animal-inventory-clean.csv` — each **pivoted wide** first (commodity/statistic/animal/nutrient values → columns) to avoid a many-rows-per-county-year fan-out | `county_fips` + `year` | 1 row / county + year |
+| **P3b** | `county-agriculture-asof.csv` | `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `livestock-inventory-clean.csv` (cattle/hog head counts) | derived: **backward as-of** match on `county_fips` + `year`, plus a partial manure refresh (see §6) | 1 row / county + year, **dense for 2015–2025** |
+| **P4** | `state-chemical-spending.csv` | `crop-chemical-application-clean.csv` + `chemical-fertilizer-feed-spending-clean.csv`, pivoted wide | `state_fips` + `year` | 1 row / year (IA only — no spatial variation) |
+| **P5** | `huc12-landuse-bmp.csv` | `cdl-huc12-fractions-clean.csv` + `iowa-nrs-bmp-huc8-clean.csv` (pivoted wide by `practice_type`) | `huc8_code = left(huc12_code, 8)` + `year` | 1 row / HUC-12 + year (BMP values are broadcast to every child HUC-12 of a HUC-8 — see §6) |
+| **P6** | `npdes-facility.csv` | `npdes-dmrs-clean.csv` (**aggregated** to `npdes_id` + `fiscal_year` — e.g. total exceedances, violation count, mean `dmr_value` per parameter — to avoid the per-outfall-per-parameter fan-out) + `npdes-catchments-clean.csv` + `echo-facilities-clean.csv` + `echo-naics-clean.csv` + `echo-sics-clean.csv` + `npdes-attains-clean.csv` | `npdes_id` | 1 row / permit + fiscal year, carrying `wbd_huc12`/`huc8` for downstream spatial joins |
+| **P7** | `census-population.csv` | `iowa-census-population-2010-2020-clean.csv` concatenated with `iowa-census-population-2020-2025-clean.csv` (dedup overlap year 2020) | schema union | 1 row / city + year + estimate type — **held here, not merged further** (see §6) |
 
 ---
 
@@ -84,8 +89,8 @@ Both inputs are `03a` outputs, or one `03a` output + one `02_clean` table.
 
 | # | Output | Inputs | Join | Grain |
 |---|---|---|---|---|
-| **S1** | `wq-geo-soil-daily-clean.csv` | P1 (`03a`) + P2 (`03a`) | `MonitoringLocationIdentifier` | 1 row / measurement event, now carrying HUC-12/10/8, `mukey`, and soil attributes alongside daily climate/streamflow |
-| **S2** | `station-year-context-clean.csv` | P2 (`03a`, gives `huc12_code`/`huc8_code`/derived `county_fips` per station) + P5 (`03a`, HUC-12 land use/BMP) + P6 (`03a`, NPDES facility context aggregated to `huc12`/`huc8` + `fiscal_year`) + **P3** (`03a`, county **crop/livestock** — annual, already dense) + **P3b** (`03a`, county **N&P fertilizer/manure** — as-of-matched & refreshed, dense for 2015–2025) + P4 (`03a`, state chemical spending) | `huc12_code`/`huc8_code` + `year` for the watershed layers; derived `county_fips` + `year` for agriculture; `year` alone for state spending | 1 row / station + year — every slow-moving/annual covariate broadcast to the station via its watershed, county, and state membership |
+| **S1** | `wq-geo-soil-daily.csv` | P1 (`03a`) + P2 (`03a`) | `MonitoringLocationIdentifier` | 1 row / measurement event, now carrying HUC-12/10/8, `mukey`, and soil attributes alongside daily climate/streamflow |
+| **S2** | `station-year-context.csv` | P2 (`03a`, gives `huc12_code`/`huc8_code`/derived `county_fips` per station) + P5 (`03a`, HUC-12 land use/BMP) + P6 (`03a`, NPDES facility context aggregated to `huc12`/`huc8` + `fiscal_year`) + **P3** (`03a`, county **crop/livestock** — annual, already dense) + **P3b** (`03a`, county **N&P fertilizer/manure** — as-of-matched & refreshed, dense for 2015–2025) + P4 (`03a`, state chemical spending) | `huc12_code`/`huc8_code` + `year` for the watershed layers; derived `county_fips` + `year` for agriculture; `year` alone for state spending | 1 row / station + year — every slow-moving/annual covariate broadcast to the station via its watershed, county, and state membership |
 
 > **Agriculture split across P3 / P3b.** S2 draws the annual, natively-dense
 > crop-yield and livestock columns from **P3**, but the N&P fertilizer/manure
@@ -104,7 +109,7 @@ Uses `03b` outputs (subsequent to secondary).
 
 | # | Output | Inputs | Join | Grain |
 |---|---|---|---|---|
-| **T1** | `epa-full-merged.csv` | S1 (`03b`, daily measurement + geo + soil + climate + streamflow) + S2 (`03b`, station + year context: agriculture, land use, BMP, NPDES proximity, chemical spending) | `MonitoringLocationIdentifier` + `YEAR(ActivityStartDate)` | 1 row / WQ measurement event — **the single final modeling table**, superseding today's `data/tabular/03_merged/epa-climate-merged.csv` |
+| **T1** | `epa-full.csv` | S1 (`03b`, daily measurement + geo + soil + climate + streamflow) + S2 (`03b`, station + year context: agriculture, land use, BMP, NPDES proximity, chemical spending) | `MonitoringLocationIdentifier` + `YEAR(ActivityStartDate)` | 1 row / WQ measurement event — **the single final modeling table**, superseding today's `data/tabular/merged/epa-climate-merged.csv` |
 
 `T1` is the terminal output: every WQ measurement, its full daily climate/streamflow record, its static station geography and soil, and every annual watershed/county/state contextual variable, in one CSV.
 
@@ -112,33 +117,33 @@ Uses `03b` outputs (subsequent to secondary).
 
 ## 5. Full dependency graph
 
-```
-02_clean/water-quality/epa-wq-clean.csv ────────────┐
-02_clean/water-quality/epa-stations-clean.csv ───────┤
-02_clean/climate/prism-iowa-climate-clean.csv ───────┼──▶ P1 wq-daily-environment-clean.csv ──┐
-02_clean/climate/isu-climate-clean.csv ──────────────┤                                          │
-02_clean/streamflow/usgs-iowa-discharge-clean.csv ───┤                                          │
-02_clean/streamflow/usgs-iowa-gauges-clean.csv ──────┘                                          │
-                                                                                                  │
-02_clean/water-quality/epa-stations-clean.csv ───────┐                                           │
-spatial/02_clean/nhdplus/wbd-huc12-station-crosswalk ┤                                           │
-spatial/02_clean/ssurgo/ssurgo-mapunit-station-x ────┼──▶ P2 station-geo-soil-clean.csv ─┬───────┼──▶ S1 wq-geo-soil-daily-clean.csv ──┐
-02_clean/soil/ssurgo-iowa-attributes-clean.csv ──────┘                                   │       │                                     │
-                                                                                          │                                             │
-02_clean/landuse/cdl-huc12-fractions-clean.csv ──────┐                                   │                                             │
-02_clean/bmp/iowa-nrs-bmp-huc8-clean.csv ────────────┴──▶ P5 huc12-landuse-bmp-merged.csv ┤                                            │
-                                                                                          │                                             │
-02_clean/npdes/*.csv (6 files) ──────────────────────────▶ P6 npdes-facility-merged.csv ─┤                                             │
-                                                                                          │                                             ├──▶ T1 epa-full-merged.csv
-02_clean/agriculture/{crop-yields,livestock,np-fert,np-manure,manure-animal-inv} ────────▶ P3 county-agriculture-merged.csv ─┤          │
-                                                                                                                              │          │
-02_clean/agriculture/{np-fert,np-manure,livestock} ──[backward as-of + partial manure refresh]──▶ P3b county-nutrient-loading-clean.csv ┤ │
-                                                                                                                              │          │
-02_clean/agriculture/{crop-chem-app,fert-feed-spending} ─────────────────────────────────▶ P4 state-chemical-spending-merged.csv ┤     │
-                                                                                                                              │          │
-                              (P2 + P5 + P6 + P3[crop/livestock] + P3b[N&P] + P4) ────▶ S2 station-year-context-clean.csv ────┴──────────┘
+Read `X ◀── a + b` as "output `X` is built from inputs `a` and `b`". All
+primary (`P*`) inputs are `02_clean` / `spatial/02_clean` tables; secondary and
+tertiary stages consume the outputs above them.
 
-02_clean/census/*.csv (2 files) ──────────────────────▶ P7 census-population-merged.csv   [terminal — see §6, not wired into T1]
+```
+Primary — data/03a_merge_primary/
+  P1  wq-daily-environment.csv    ◀── epa-wq + epa-stations + prism-iowa-climate + isu-climate
+                                        + usgs-iowa-discharge + usgs-iowa-gauges   (last two: nearest-neighbor spatial match)
+  P2  station-geo-soil.csv        ◀── epa-stations + wbd-huc12-station-crosswalk (spatial)
+                                        + ssurgo-mapunit-station-crosswalk (spatial) + ssurgo-iowa-attributes
+  P3  county-agriculture.csv      ◀── crop-yields + livestock-inventory + np-fertilizer + np-manure
+                                        + manure-animal-inventory   (each pivoted wide)
+  P3b county-agriculture-asof.csv ◀── np-fertilizer + np-manure + livestock-inventory
+                                        [backward as-of + partial manure refresh — see §6]
+  P4  state-chemical-spending.csv ◀── crop-chemical-application + chemical-fertilizer-feed-spending   (pivoted wide)
+  P5  huc12-landuse-bmp.csv       ◀── cdl-huc12-fractions + iowa-nrs-bmp-huc8   (huc8 = left(huc12,8))
+  P6  npdes-facility.csv          ◀── npdes-dmrs (aggregated) + npdes-catchments + echo-facilities
+                                        + echo-naics + echo-sics + npdes-attains
+  P7  census-population.csv       ◀── iowa-census-population-2010-2020 + iowa-census-population-2020-2025
+                                        [terminal — see §6, not wired into T1]
+
+Secondary — data/03b_merge_secondary/
+  S1  wq-geo-soil-daily.csv       ◀── P1 + P2
+  S2  station-year-context.csv    ◀── P2 + P5 + P6 + P3[crop/livestock] + P3b[N&P] + P4
+
+Tertiary — data/03c_merge_tertiary/
+  T1  epa-full.csv                ◀── S1 + S2   [the single final modeling table]
 ```
 
 ---
