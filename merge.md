@@ -1,8 +1,24 @@
 Us# Merge Plan
 
-Plan only — nothing in this document has been implemented yet. It describes how
-every dataset catalogued in `DATA.md` gets combined into a single modeling table,
-in three tiers of merges plus a final assembly.
+**Status: implemented.** This document describes how every dataset catalogued in
+`DATA.md` gets combined into a single modeling table, in three tiers of merges
+plus a final assembly. All stages are now built — each `P*`/`S*`/`T1` below has a
+notebook at `src/03_merge/<id>_*.ipynb` and writes the listed CSV. Verified output
+shapes:
+
+| Stage | Notebook | Output | Rows | Cols |
+|---|---|---|--:|--:|
+| P1 | `P1_wq-daily-environment-merge.ipynb` | `data/03a_merge_primary/wq-daily-environment.csv` | 48,251 | 84 |
+| P2 | `P2_station-geo-soil-merge.ipynb` | `data/03a_merge_primary/station-geo-soil.csv` | 1,666 | 28 |
+| P3 | `P3_county-agriculture-merge.ipynb` | `data/03a_merge_primary/county-agriculture.csv` | 2,475 | 85 |
+| P3b | `P3b_county-nutrient-asof-refresh.ipynb` | `data/03a_merge_primary/county-agriculture-asof.csv` | 1,089 | 24 |
+| P4 | `P4_state-chemical-spending-merge.ipynb` | `data/03a_merge_primary/state-chemical-spending.csv` | 10 | 112 |
+| P5 | `P5_huc12-landuse-bmp-merge.ipynb` | `data/03a_merge_primary/huc12-landuse-bmp.csv` | 18,854 | 18 |
+| P6 | `P6_npdes-facility-merge.ipynb` | `data/03a_merge_primary/npdes-facility.csv` | 14,030 | 32 |
+| P7 | `P7_census-population-merge.ipynb` | `data/03a_merge_primary/census-population.csv` | 17,877 | 6 |
+| S1 | `S1_wq-geo-soil-daily-merge.ipynb` | `data/03b_merge_secondary/wq-geo-soil-daily.csv` | 48,251 | 102 |
+| S2 | `S2_station-year-context-merge.ipynb` | `data/03b_merge_secondary/station-year-context.csv` | 18,326 | 217 |
+| T1 | `T1_epa-full-merge.ipynb` | `data/03c_merge_tertiary/epa-full.csv` | 48,251 | 315 |
 
 ## Contents
 
@@ -90,7 +106,7 @@ Both inputs are `03a` outputs, or one `03a` output + one `02_clean` table.
 | # | Output | Inputs | Join | Grain |
 |---|---|---|---|---|
 | **S1** | `wq-geo-soil-daily.csv` | P1 (`03a`) + P2 (`03a`) | `MonitoringLocationIdentifier` | 1 row / measurement event, now carrying HUC-12/10/8, `mukey`, and soil attributes alongside daily climate/streamflow |
-| **S2** | `station-year-context.csv` | P2 (`03a`, gives `huc12_code`/`huc8_code`/derived `county_fips` per station) + P5 (`03a`, HUC-12 land use/BMP) + P6 (`03a`, NPDES facility context aggregated to `huc12`/`huc8` + `fiscal_year`) + **P3** (`03a`, county **crop/livestock** — annual, already dense) + **P3b** (`03a`, county **N&P fertilizer/manure** — as-of-matched & refreshed, dense for 2015–2025) + P4 (`03a`, state chemical spending) | `huc12_code`/`huc8_code` + `year` for the watershed layers; derived `county_fips` + `year` for agriculture; `year` alone for state spending | 1 row / station + year — every slow-moving/annual covariate broadcast to the station via its watershed, county, and state membership |
+| **S2** | `station-year-context.csv` | P2 (`03a`, gives `huc12_code`/`huc8_code`/derived `county_fips` per station) + P5 (`03a`, HUC-12 land use/BMP) + P6 (`03a`, NPDES facility context aggregated to `huc8` + `fiscal_year`) + **P3** (`03a`, county **crop/livestock** — annual, already dense) + **P3b** (`03a`, county **N&P fertilizer/manure** — as-of-matched & refreshed, dense for 2015–2025) + P4 (`03a`, state chemical spending) | `huc12_code` + `year` (P5 land use); `huc8_code` + `year` (P6 NPDES); derived `county_fips` + `year` for agriculture; `year` alone for state spending | 1 row / station + year — every slow-moving/annual covariate broadcast to the station via its watershed, county, and state membership |
 
 > **Agriculture split across P3 / P3b.** S2 draws the annual, natively-dense
 > crop-yield and livestock columns from **P3**, but the N&P fertilizer/manure
@@ -100,6 +116,16 @@ Both inputs are `03a` outputs, or one `03a` output + one `02_clean` table.
 > as-of-matched, 2015–2025-dense version built for exactly this join. Pull only
 > the `cropyield__*` / `livestock__*` blocks from P3 and the `npfert__*` /
 > `npmanure__*` blocks (plus provenance columns) from P3b.
+
+> **As built.** S1 keeps P1's copies of the columns it shares with P2
+> (`OrganizationIdentifier`, lat/lon, `StateCode`, etc.), dropping them from the
+> P2 side, so it adds only the 18 new geo/soil columns → 48,251 × 102. S2 is a
+> full station × year grid over the WQ window **2015–2025** (1,666 stations ×
+> 11 years = 18,326 rows × 217 cols); trailing-year nulls are expected where an
+> input stops short (P4 ends 2024; P3 crop/livestock ends 2025). **P6 is
+> aggregated to `huc8` + year**, not HUC-12: every station's HUC-8 contains NPDES
+> facilities (100% coverage) whereas only ~62% of station HUC-12s do, so HUC-8
+> gives a meaningful point-source signal for every station.
 
 ---
 
@@ -112,6 +138,14 @@ Uses `03b` outputs (subsequent to secondary).
 | **T1** | `epa-full.csv` | S1 (`03b`, daily measurement + geo + soil + climate + streamflow) + S2 (`03b`, station + year context: agriculture, land use, BMP, NPDES proximity, chemical spending) | `MonitoringLocationIdentifier` + `YEAR(ActivityStartDate)` | 1 row / WQ measurement event — **the single final modeling table**, superseding today's `data/tabular/merged/epa-climate-merged.csv` |
 
 `T1` is the terminal output: every WQ measurement, its full daily climate/streamflow record, its static station geography and soil, and every annual watershed/county/state contextual variable, in one CSV.
+
+> **As built.** T1 preserves S1's grain exactly (48,251 measurement rows) and
+> left-joins S2 on `MonitoringLocationIdentifier` + derived `year`, dropping the
+> membership keys S2 shares with S1 (`county_fips`, `huc12_code`, `huc8_code`) so
+> only new annual-context columns are added → **48,251 × 315**. Note the app
+> (`app.py`) still reads the legacy `epa-climate-merged.csv`; wiring it onto
+> `epa-full.csv` is a separate migration (the `FEATURE_COLS` contract differs)
+> and is out of scope for the merge itself.
 
 ---
 

@@ -1,8 +1,11 @@
 # Data Dictionary
 
 A catalog of every dataset in this repository: where it comes from, and what each
-column measures. Paths reflect the current `data/tabular/01_raw` · `02_clean` ·
-`03_merged` layout (raw inputs, cleaned tables, and merged modeling tables).
+column measures. Paths reflect the current `data/tabular/01_raw` · `02_clean`
+layout (raw inputs, cleaned tables). The cleaned tables below are combined into
+merged modeling tables under `data/03a_merge_primary/` · `03b_merge_secondary/` ·
+`03c_merge_tertiary/` — all now built; see `MERGE.md` for the per-stage inventory,
+keys, and the terminal `epa-full.csv` modeling table.
 
 Units are noted where the source defines them. Identifiers used to join datasets
 together are flagged as **(key)**.
@@ -1160,9 +1163,10 @@ monitoring station to the watershed polygon it falls within.
 
 **`data/spatial/02_clean/nhdplus/wbd-huc12-station-crosswalk-clean.csv`**
 (1,666 rows) — one row per `MonitoringLocationIdentifier`, giving the HUC-12/10/8
-watershed it sits in. This is the crosswalk the future land-use/BMP merge step
-uses to attach `cdl-huc12-fractions-clean.csv` and `iowa-nrs-bmp-huc8-clean.csv`
-to individual stations.
+watershed it sits in. The `P2` merge uses this crosswalk to attach each station's
+HUC-12/10/8; the `S2` merge then joins `cdl-huc12-fractions-clean.csv` and
+`iowa-nrs-bmp-huc8-clean.csv` onto those watersheds and broadcasts them to the
+station.
 
 | Column | Description |
 |---|---|
@@ -1181,8 +1185,9 @@ in-stream/lake sampling points).
 
 **`data/spatial/02_clean/ssurgo/ssurgo-mapunit-station-crosswalk-clean.csv`**
 (1,666 rows) — one row per `MonitoringLocationIdentifier`, giving the soil map
-unit it sits in. This is the crosswalk the future soil merge step uses to
-attach `ssurgo-iowa-attributes-clean.csv` to individual stations. **Coverage
+unit it sits in. The `P2` merge uses this crosswalk to attach
+`ssurgo-iowa-attributes-clean.csv` to individual stations (carried into `S1`
+and the terminal `epa-full.csv`). **Coverage
 note:** because stations sit in or next to streams/lakes, only ~1,077 of 1,666
 (65%) resolve to a `mukey` present in `ssurgo-iowa-attributes-clean.csv` — the
 rest land in non-soil water map units (`map_unit_symbol` `W`/`RIVER`/`LAKE`)
