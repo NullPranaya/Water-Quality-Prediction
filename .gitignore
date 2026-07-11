@@ -14,4 +14,6 @@ data/
 CLAUDE.md
 
 # Saved models
-*.pkl
+src/05_modeling/linear_regression/*.pkl
+src/05_modeling/random_forest/*.pkl
+src/05_modeling/gradient_boosting/*.pkl
