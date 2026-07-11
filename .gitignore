@@ -12,3 +12,6 @@ data/
 
 # Claude files
 CLAUDE.md
+
+# Saved models
+*.pkl
