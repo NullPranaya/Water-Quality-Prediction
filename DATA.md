@@ -44,6 +44,10 @@ together are flagged as **(key)**.
   - [Cleaned census outputs](#cleaned-census-outputs)
 - [Spatial Layers](#spatial-layers)
   - [Cleaned spatial outputs](#cleaned-spatial-outputs)
+- [Merged Datasets](#merged-datasets)
+  - [Primary merges](#primary-merges-data03a_merge_primary)
+  - [Secondary merges](#secondary-merges-data03b_merge_secondary)
+  - [Tertiary merge](#tertiary-merge-data03c_merge_tertiary)
 - [Imagery & Text](#imagery--text)
 
 ---
@@ -1202,6 +1206,253 @@ placement, not a join defect.
 | `survey_area` | County soil survey area symbol (e.g. `IA181`) the polygon belongs to. |
 | `match_method` | `within` (station falls inside the polygon) or `nearest` (fallback snap for the ~5 stations outside the mapped extent). |
 | `match_distance_m` | Distance to the matched polygon in meters; `0` for `within` matches. |
+
+---
+
+## Merged Datasets
+
+The cleaned per-domain tables above are combined into modeling-ready tables in
+three tiers — primary (`03a`), secondary (`03b`), tertiary (`03c`) — written
+outside `data/tabular/`, at the `data/` root, with no `-clean`/`-merged`
+suffix on the filename. **`MERGE.md`** is the source of truth for the full
+join plan (foreign keys, spatial-match logic, aggregation rules, and known
+gaps); this section catalogs each output's shape and the columns the merge
+step itself introduces — pivoted wide-format families, aggregates,
+spatial-match fields, provenance flags — that aren't already documented in
+the per-domain sections above.
+
+| Stage | Output | Rows | Cols | Grain |
+|---|---|--:|--:|---|
+| P1 | `03a_merge_primary/wq-daily-environment.csv` | 48,251 | 84 | 1 row / WQ measurement event |
+| P2 | `03a_merge_primary/station-geo-soil.csv` | 1,666 | 28 | 1 row / station |
+| P3 | `03a_merge_primary/county-agriculture.csv` | 2,475 | 85 | 1 row / county + year |
+| P3b | `03a_merge_primary/county-agriculture-asof.csv` | 1,089 | 24 | 1 row / county + year (dense 2015–2025) |
+| P4 | `03a_merge_primary/state-chemical-spending.csv` | 10 | 112 | 1 row / year (IA only) |
+| P5 | `03a_merge_primary/huc12-landuse-bmp.csv` | 18,854 | 18 | 1 row / HUC-12 + year |
+| P6 | `03a_merge_primary/npdes-facility.csv` | 14,030 | 32 | 1 row / permit + fiscal year |
+| P7 | `03a_merge_primary/census-population.csv` | 17,877 | 6 | 1 row / city + year + estimate type |
+| S1 | `03b_merge_secondary/wq-geo-soil-daily.csv` | 48,251 | 102 | 1 row / WQ measurement event |
+| S2 | `03b_merge_secondary/station-year-context.csv` | 18,326 | 217 | 1 row / station + year |
+| T1 | `03c_merge_tertiary/epa-full.csv` | 48,251 | 315 | 1 row / WQ measurement event — **terminal modeling table** |
+
+### Primary merges (`data/03a_merge_primary/`)
+
+#### P1 — `wq-daily-environment.csv` (48,251 × 84)
+
+One row per WQ measurement event (station + timestamp). Direct join of
+`epa-wq-clean.csv` + `epa-stations-clean.csv` + `prism-iowa-climate-clean.csv`
+on `MonitoringLocationIdentifier`; `isu-climate-clean.csv` and
+`usgs-iowa-discharge-clean.csv` are attached by **nearest-neighbor spatial
+match** on station lat/lon (an external ISU airport-station coordinate lookup
+provides the match candidates; see `MERGE.md` §6). The 23
+`<parameter>_value`/`_unit` pairs and the 9 station identity columns keep
+their names from [`epa-wq-clean.csv`](#cleaned-water-quality-outputs) /
+[`epa-stations-clean.csv`](#cleaned-water-quality-outputs); the columns below
+are introduced by the merge itself:
+
+| Column | Description |
+|---|---|
+| `prism_tmax_c` / `prism_tmin_c` / `prism_ppt_mm` / `prism_tdmean_c` | Same-day PRISM climate at this station (direct join). |
+| `climate_station` | ID of the nearest ISU/IEM airport station matched to this WQ station. |
+| `distance_to_climate_station_km` | Distance from the WQ station to that matched ISU station (km). |
+| `climate_station_name` | Name of the matched ISU station. |
+| `isu_precip_in`, `isu_avg_wind_speed_kts`, `isu_avg_wind_drct`, `isu_min_rh`, `isu_avg_rh`, `isu_max_rh`, `isu_snow_in`, `isu_snowd_in`, `isu_min_feel_c`, `isu_avg_feel_c`, `isu_max_feel_c`, `isu_max_wind_speed_kts`, `isu_climo_high_c`, `isu_climo_low_c` | That day's ISU climate values at the matched station (`isu_` prefix added). ISU's own temperature/dewpoint columns are dropped here since PRISM already supplies `tmax`/`tmin`/`tdmean` for this station-day. |
+| `streamflow_site_no` | USGS gauge site number nearest to this WQ station. |
+| `distance_to_streamflow_gauge_km` | Distance to that matched gauge (km). |
+| `streamflow_gauge_name` / `streamflow_gauge_drain_area_sqmi` | Matched gauge's name and upstream drainage area. |
+| `streamflow_discharge_cfs` / `streamflow_discharge_cd` | That day's discharge and data-qualification code at the matched gauge. |
+
+#### P2 — `station-geo-soil.csv` (1,666 × 28)
+
+One row per station. Joins `epa-stations-clean.csv` to the station→HUC-12
+crosswalk and station→soil-map-unit crosswalk (both spatial joins done
+upstream in `02_clean`), then to `ssurgo-iowa-attributes-clean.csv` on
+`mukey`.
+
+| Column | Description |
+|---|---|
+| `OrganizationIdentifier` … `ProviderName` | Carried unchanged from [`epa-stations-clean.csv`](#cleaned-water-quality-outputs). |
+| `county_fips` | **Derived**: `StateCode` + `CountyCode`, zero-padded to the standard 5-digit FIPS. |
+| `huc12_code` / `huc12_name` / `huc10_code` / `huc8_code` / `huc12_acres` | From the [station→HUC-12 crosswalk](#cleaned-spatial-outputs). |
+| `mukey` / `map_unit_symbol` / `survey_area` / `soil_match_method` / `soil_match_distance_m` | From the [station→soil-map-unit crosswalk](#cleaned-spatial-outputs) (renamed from `match_method` / `match_distance_m`). |
+| `map_unit_name` / `dominant_component` / `dominant_component_pct` / `hydrologic_group` / `drainage_class` / `ksat_mean` / `awc_mean` | From [`ssurgo-iowa-attributes-clean.csv`](#cleaned-soil-output), joined on `mukey` (~65% of stations resolve to a soil-bearing map unit — see the crosswalk's coverage note). |
+
+#### P3 — `county-agriculture.csv` (2,475 × 85)
+
+One row per `county_fips` + `year`. `crop-yields-clean.csv`,
+`livestock-inventory-clean.csv`, `np-fertilizer-clean.csv`,
+`np-manure-clean.csv`, and `manure-animal-inventory-clean.csv` are each
+**pivoted from long to wide** (one column per distinct combination of their
+non-numeric dimensions) before joining, to avoid a many-rows-per-county-year
+fan-out. Column-naming templates:
+
+| Family | Template | Example |
+|---|---|---|
+| Crop yields | `cropyield__<commodity_detail>__<statistic>__<program>` | `cropyield__corn_grain__yield__survey` |
+| Livestock | `livestock__<commodity_detail>__<statistic>__<program>` | `livestock__cattle_cows_milk__inventory__census` |
+| N&P from fertilizer | `npfert__<nutrient>__<source>_kg` | `npfert__n__farm_kg`, `npfert__n__total_kg` |
+| N&P from manure | `npmanure__<animal_category>__<nutrient>_kg` | `npmanure__cattle__n_kg`, `npmanure__total__p_kg` |
+| Manure animal inventory | `manureinv__<animal>__<adj_head\|raw_head>` | `manureinv__hogs_and_pigs__adj_head` |
+
+Values are the `value` (or `value_kg` / `head_count`) column from the
+corresponding [cleaned agriculture table](#cleaned-usda-nass-outputs), blank
+where the source was NASS-suppressed or that county/year had no record.
+**The raw N&P columns here are quinquennial** (1950–2017 steps) — inside the
+2015–2025 WQ window only 2017 has a native value; use **P3b** instead for a
+join that's dense across that window (see `MERGE.md` §6).
+
+#### P3b — `county-agriculture-asof.csv` (1,089 × 24)
+
+One row per `county_fips` + `year`, **dense for 2015–2025**. Rebuilds the N&P
+fertilizer/manure figures from P3 with a **backward as-of match** (each year
+anchored to the most recent census year ≤ `min(year, 2017)`) and a **partial
+manure refresh** that scales the 2017 manure baseline by observed cattle/hog
+head-count change. Same `npfert__*` / `npmanure__*` column families as P3,
+plus provenance columns:
+
+| Column | Description |
+|---|---|
+| `np_base_year` | The census year this row's N&P figures were carried forward from. |
+| `np_years_stale` | `year - np_base_year`. |
+| `cattle_head_ratio` / `hog_head_ratio` | Ratio of this year's survey head count to the `np_base_year` head count, used to scale manure nutrients. |
+| `manure_cattle_refreshed` / `manure_hogs_refreshed` | Whether that animal's manure figures were head-count-refreshed (`True`) or simply carried forward from 2017 (`False`). |
+
+See `MERGE.md` §6 for the full refresh methodology and its "no annual hog
+trend" caveat.
+
+#### P4 — `state-chemical-spending.csv` (10 × 112)
+
+One row per `year` (Iowa only — no county/HUC variation in the source).
+`crop-chemical-application-clean.csv` and
+`chemical-fertilizer-feed-spending-clean.csv` are each pivoted wide:
+
+| Family | Template | Example |
+|---|---|---|
+| Chemical application | `chemapp__<commodity>__<input_class>__<active_ingredient>_lb` | `chemapp__corn__herbicide__glyphosate_lb`, `chemapp__soybeans__insecticide__total_lb` |
+| Fertilizer/feed spending | `spend__<expense_category>__<usd\|usd_per_operation\|pct_of_operations\|pct_of_prod_expenses>` | `spend__fertilizer_totals_incl_lime_and_soil_conditioners__usd` |
+
+One `chemapp__<commodity>__<input_class>__total_lb` column per commodity ×
+input-class pair rolls up all active ingredients in that class (the raw
+export's own `TOTAL` domain rows). ~45% of individual active-ingredient
+values are blank where NASS suppressed them.
+
+#### P5 — `huc12-landuse-bmp.csv` (18,854 × 18)
+
+One row per `huc12_code` + `year`. `cdl-huc12-fractions-clean.csv` keeps its
+`pct_*` columns unchanged (see [Land Use](#land-use-cropland-data-layer));
+`iowa-nrs-bmp-huc8-clean.csv` is pivoted wide by `practice_type` and joined on
+`huc8_code = left(huc12_code, 8)` — **the same HUC-8 BMP values are broadcast
+to every child HUC-12** (the source has no finer resolution; see `MERGE.md`
+§6).
+
+| Column | Description |
+|---|---|
+| `huc8_code` | **Derived**: first 8 characters of `huc12_code`. |
+| `bmp__bioreactor_sat_buffer__number` / `bmp__bioreactor_sat_buffer__upd2022__number` | Bioreactor/saturated-buffer adoption counts (original and 2022-updated assessment). |
+| `bmp__cover_crop__acres` | Cover-crop acreage. |
+| `bmp__crep_wetland__acres` / `bmp__crep_wetland__number` | CREP wetland acreage and count. |
+| `bmp__erosion_control__acres` | Erosion-control practice acreage. |
+
+#### P6 — `npdes-facility.csv` (14,030 × 32)
+
+One row per `npdes_id` + `fiscal_year`. `npdes-dmrs-clean.csv` is
+**pre-aggregated** to permit + fiscal-year (counts and mean/max across its
+per-outfall-per-parameter rows) before joining to `npdes-catchments-clean.csv`
++ `echo-facilities-clean.csv` + `echo-naics-clean.csv` + `echo-sics-clean.csv`
++ `npdes-attains-clean.csv` on `npdes_id`.
+
+| Column | Description |
+|---|---|
+| `npdes_id` / `fiscal_year` | **(key)** Permit number and federal fiscal year. |
+| `wbd_huc12` / `wbd_huc8` / `wbd_huc12_name` / `nhdplusid` / `area_sqkm` | From [`npdes-catchments-clean.csv`](#cleaned-npdes-outputs) — the catchment/watershed this facility drains into. |
+| `npdes_n_catchments` | Number of NHDPlus catchments matched to this permit (some permits map to more than one). |
+| `facility_name` / `facility_type_code` / `city` / `county_fips` / `facility_latitude` / `facility_longitude` / `impaired_303d` | From [`echo-facilities-clean.csv`](#cleaned-npdes-outputs). |
+| `naics_code` / `naics_desc` | Primary NAICS classification, from [`echo-naics-clean.csv`](#cleaned-npdes-outputs). |
+| `sic_code` / `sic_desc` | Primary SIC classification, from [`echo-sics-clean.csv`](#cleaned-npdes-outputs). |
+| `attains_n_assessment_units` / `attains_n_impaired` / `attains_any_impaired` | Count of ATTAINS assessment units linked to this permit, how many are impaired, and a boolean summary, aggregated from [`npdes-attains-clean.csv`](#cleaned-npdes-outputs). |
+| `dmr_n_records` / `dmr_n_outfalls` / `dmr_n_parameters` | Row/outfall/parameter counts aggregated from [`npdes-dmrs-clean.csv`](#cleaned-npdes-outputs) for this permit + fiscal year. |
+| `dmr_n_exceedances` / `dmr_mean_exceedence_pct` / `dmr_max_exceedence_pct` | Count and mean/max of `exceedence_pct` across the permit's DMR rows. |
+| `dmr_n_violations` | Count of DMR rows with a non-null `violation_code`. |
+| `dmr_n_late_reports` / `dmr_mean_days_late` / `dmr_max_days_late` | Late-submission count and mean/max `days_late`. |
+
+#### P7 — `census-population.csv` (17,877 × 6)
+
+One row per `place` + `year` + `estimate_type`. Concatenates
+`iowa-census-population-2010-2020-clean.csv` and
+`iowa-census-population-2020-2025-clean.csv` (deduplicating the overlapping
+2020 year), adding a `source_vintage` provenance column (`2010-2020` /
+`2020-2025`). Schema otherwise matches the
+[cleaned census outputs](#cleaned-census-outputs). **Held here, not merged
+further** — there is no city→county or city→coordinate crosswalk anywhere in
+`02_clean` to join it to a station or `county_fips` (see `MERGE.md` §6).
+
+### Secondary merges (`data/03b_merge_secondary/`)
+
+#### S1 — `wq-geo-soil-daily.csv` (48,251 × 102)
+
+One row per WQ measurement event — P1's 84 columns unchanged, plus P2's 18
+station-level geo/soil columns broadcast onto every measurement at that
+station (joined on `MonitoringLocationIdentifier`): `county_fips`,
+`huc12_code`, `huc12_name`, `huc10_code`, `huc8_code`, `huc12_acres`,
+`mukey`, `map_unit_symbol`, `survey_area`, `soil_match_method`,
+`soil_match_distance_m`, `map_unit_name`, `dominant_component`,
+`dominant_component_pct`, `hydrologic_group`, `drainage_class`, `ksat_mean`,
+`awc_mean` — see [P2](#p2--station-geo-soilcsv-1666--28) for what each means.
+
+#### S2 — `station-year-context.csv` (18,326 × 217)
+
+One row per `MonitoringLocationIdentifier` + `year` — a full station × year
+grid over the WQ window 2015–2025 (1,666 stations × 11 years). Every
+slow-moving/annual covariate is broadcast to the station via its watershed,
+county, and state membership:
+
+| Source | Join | Columns carried |
+|---|---|---|
+| P2 | — | `county_fips`, `huc12_code`, `huc8_code` (membership keys only; P2's geo/soil detail stays in S1) |
+| P5 | `huc12_code` + `year` | `pct_*` land-use fractions, `bmp__*` practice-adoption |
+| P6 | `huc8_code` + `year` (as `fiscal_year`) | Re-aggregated to `huc8`, not per-permit — see below |
+| P3 | derived `county_fips` + `year` | `cropyield__*`, `livestock__*` |
+| P3b | derived `county_fips` + `year` | `np_base_year`, `np_years_stale`, `cattle_head_ratio`, `hog_head_ratio`, `manure_*_refreshed`, `npfert__*`, `npmanure__*` |
+| P4 | `year` | `chemapp__*`, `spend__*` |
+
+P6 is aggregated one level further here — from per-**permit**
+(`npdes-facility.csv`) to per-**HUC-8** — because every station's HUC-8
+contains at least one NPDES facility (100% coverage) while only ~62% of
+station HUC-12s do:
+
+| Column | Description |
+|---|---|
+| `npdes__n_facilities` | Count of distinct permits in this HUC-8 + year. |
+| `npdes__n_impaired_303d` / `npdes__any_impaired` | Count and boolean summary of §303(d)-impaired facilities in the HUC-8. |
+| `npdes__dmr_n_records` / `npdes__dmr_n_exceedances` / `npdes__dmr_n_violations` / `npdes__dmr_n_late_reports` | Summed across all permits in the HUC-8. |
+| `npdes__dmr_mean_exceedence_pct` | Mean exceedance percentage across the HUC-8's permits. |
+
+> **Agriculture is split across P3/P3b on purpose** — S2 takes the
+> natively-dense `cropyield__*` / `livestock__*` columns from P3, but the
+> `npfert__*` / `npmanure__*` columns from **P3b**, not P3's own (quinquennial,
+> ~91% null inside 2015–2025) N&P columns. See `MERGE.md` §3.
+>
+> Trailing-year nulls are expected where an input series ends short of 2025
+> (P4 chemical spending ends 2024).
+
+### Tertiary merge (`data/03c_merge_tertiary/`)
+
+#### T1 — `epa-full.csv` (48,251 × 315) — the terminal modeling table
+
+One row per WQ measurement event. Left-joins S2 onto S1 on
+`MonitoringLocationIdentifier` + `year` (derived as `YEAR(ActivityStartDate)`),
+dropping the membership keys S2 shares with S1 (`county_fips`, `huc12_code`,
+`huc8_code`) so only new annual-context columns are added: S1's 102 columns
++ `year` + S2's 212 context columns (`pct_*`, `bmp__*`, `npdes__*`,
+`cropyield__*`, `livestock__*`, the N&P provenance / `npfert__*` /
+`npmanure__*` family, `chemapp__*`, `spend__*`) = 315.
+
+`epa-full.csv` is every WQ measurement, its full daily climate/streamflow
+record, its static station geography and soil, and every annual
+watershed/county/state contextual variable, in one CSV — intended to
+supersede the dashboard's current input, `data/tabular/merged/epa-climate-merged.csv`.
+Wiring `app.py` onto it is a separate, not-yet-done migration, since its
+`FEATURE_COLS` contract differs (see `CLAUDE.md`).
 
 ---
 

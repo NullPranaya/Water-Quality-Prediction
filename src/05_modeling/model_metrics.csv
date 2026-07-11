@@ -1,0 +1,37 @@
+target,model,r2,rmse,error_rate,test_rows
+Water Temperature,Linear Regression,0.8856,2.8287,27.77,6941
+Dissolved Oxygen,Linear Regression,0.3185,2.1934,18.23,6365
+pH,Linear Regression,0.2094,0.589,5.6,6471
+Nitrate,Linear Regression,0.3811,4.1861,115.69,2470
+Nitrite,Linear Regression,0.0133,0.1437,187.12,2323
+Nitrate + Nitrite,Linear Regression,0.2209,3.6504,80.68,932
+Total Phosphorus,Linear Regression,0.0287,0.4292,74.04,1178
+Specific Conductance,Linear Regression,0.3002,166.987,20.8,3214
+Total Dissolved Solids,Linear Regression,0.3802,98.9665,22.8,3603
+Total Suspended Solids,Linear Regression,0.0734,202.0689,118.55,2905
+Turbidity,Linear Regression,0.0597,117.2464,103.1,4232
+E. coli,Linear Regression,0.1114,7263.2518,147.49,3180
+Water Temperature,Random Forest,0.9517,1.8374,17.48,6941
+Dissolved Oxygen,Random Forest,0.5962,1.6884,13.27,6365
+pH,Random Forest,0.5261,0.456,3.85,6471
+Nitrate,Random Forest,0.6742,3.0372,103.22,2470
+Nitrite,Random Forest,0.0863,0.1383,175.49,2323
+Nitrate + Nitrite,Random Forest,0.6563,2.4244,59.0,932
+Total Phosphorus,Random Forest,0.3298,0.3566,57.04,1178
+Specific Conductance,Random Forest,0.8864,67.2773,6.96,3214
+Total Dissolved Solids,Random Forest,0.8243,52.6977,9.05,3603
+Total Suspended Solids,Random Forest,0.3913,163.768,78.83,2905
+Turbidity,Random Forest,0.275,102.9504,63.98,4232
+E. coli,Random Forest,0.2601,6627.6175,115.81,3180
+Water Temperature,Gradient Boosting,0.9523,1.827,18.44,6941
+Dissolved Oxygen,Gradient Boosting,0.5858,1.7099,13.89,6365
+pH,Gradient Boosting,0.5153,0.4612,4.01,6471
+Nitrate,Gradient Boosting,0.6863,2.9802,105.51,2470
+Nitrite,Gradient Boosting,0.052,0.1409,182.72,2323
+Nitrate + Nitrite,Gradient Boosting,0.7062,2.2415,58.28,932
+Total Phosphorus,Gradient Boosting,0.3437,0.3528,61.88,1178
+Specific Conductance,Gradient Boosting,0.8876,66.9074,7.65,3214
+Total Dissolved Solids,Gradient Boosting,0.8312,51.6429,9.48,3603
+Total Suspended Solids,Gradient Boosting,0.429,158.6156,92.41,2905
+Turbidity,Gradient Boosting,0.2866,102.1268,74.7,4232
+E. coli,Gradient Boosting,0.2816,6530.7604,124.85,3180
