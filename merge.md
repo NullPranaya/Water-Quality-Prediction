@@ -18,7 +18,7 @@ shapes:
 | P7 | `P7_census-population-merge.ipynb` | `data/03a_merge_primary/census-population.csv` | 17,877 | 6 |
 | S1 | `S1_wq-geo-soil-daily-merge.ipynb` | `data/03b_merge_secondary/wq-geo-soil-daily.csv` | 48,251 | 102 |
 | S2 | `S2_station-year-context-merge.ipynb` | `data/03b_merge_secondary/station-year-context.csv` | 18,326 | 217 |
-| T1 | `T1_epa-full-merge.ipynb` | `data/03c_merge_tertiary/epa-full.csv` | 48,251 | 315 |
+| T1 | `T1_epa-full-merge.ipynb` | `data/03c_merge_tertiary/epa-full.csv` | 48,251 | 315 (318 after `src/04_eda/wqi-calculation.ipynb` appends 3 `WQI*` columns) |
 
 ## Contents
 
@@ -142,10 +142,14 @@ Uses `03b` outputs (subsequent to secondary).
 > **As built.** T1 preserves S1's grain exactly (48,251 measurement rows) and
 > left-joins S2 on `MonitoringLocationIdentifier` + derived `year`, dropping the
 > membership keys S2 shares with S1 (`county_fips`, `huc12_code`, `huc8_code`) so
-> only new annual-context columns are added → **48,251 × 315**. Note the app
-> (`app.py`) still reads the legacy `epa-climate-merged.csv`; wiring it onto
-> `epa-full.csv` is a separate migration (the `FEATURE_COLS` contract differs)
-> and is out of scope for the merge itself.
+> only new annual-context columns are added → **48,251 × 315**. `app.py` reads
+> `epa-full.csv` directly via its own `FEATURE_COLS` contract (see `CLAUDE.md`);
+> the legacy `epa-climate-merged.csv` is no longer used at runtime.
+>
+> **Post-merge (out of scope for this document).** `src/04_eda/wqi-calculation.ipynb`
+> appends 3 more columns (`WQI`, `WQI_n_groups`, `WQI_weight_coverage`) to
+> `epa-full.csv` in place after the merge runs, bringing it to 318 columns.
+> See `DATA.md` §T1 for what they mean.
 
 ---
 

@@ -17,3 +17,6 @@ CLAUDE.md
 src/05_modeling/linear_regression/*.pkl
 src/05_modeling/random_forest/*.pkl
 src/05_modeling/gradient_boosting/*.pkl
+
+# EDA outputs
+/src/04_eda/outputs/

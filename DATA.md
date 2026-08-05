@@ -1233,7 +1233,7 @@ the per-domain sections above.
 | P7 | `03a_merge_primary/census-population.csv` | 17,877 | 6 | 1 row / city + year + estimate type |
 | S1 | `03b_merge_secondary/wq-geo-soil-daily.csv` | 48,251 | 102 | 1 row / WQ measurement event |
 | S2 | `03b_merge_secondary/station-year-context.csv` | 18,326 | 217 | 1 row / station + year |
-| T1 | `03c_merge_tertiary/epa-full.csv` | 48,251 | 315 | 1 row / WQ measurement event — **terminal modeling table** |
+| T1 | `03c_merge_tertiary/epa-full.csv` | 48,251 | 318 | 1 row / WQ measurement event — **terminal modeling table** |
 
 ### Primary merges (`data/03a_merge_primary/`)
 
@@ -1437,7 +1437,7 @@ station HUC-12s do:
 
 ### Tertiary merge (`data/03c_merge_tertiary/`)
 
-#### T1 — `epa-full.csv` (48,251 × 315) — the terminal modeling table
+#### T1 — `epa-full.csv` (48,251 × 318) — the terminal modeling table
 
 One row per WQ measurement event. Left-joins S2 onto S1 on
 `MonitoringLocationIdentifier` + `year` (derived as `YEAR(ActivityStartDate)`),
@@ -1445,14 +1445,31 @@ dropping the membership keys S2 shares with S1 (`county_fips`, `huc12_code`,
 `huc8_code`) so only new annual-context columns are added: S1's 102 columns
 + `year` + S2's 212 context columns (`pct_*`, `bmp__*`, `npdes__*`,
 `cropyield__*`, `livestock__*`, the N&P provenance / `npfert__*` /
-`npmanure__*` family, `chemapp__*`, `spend__*`) = 315.
+`npmanure__*` family, `chemapp__*`, `spend__*`) = 315 from the merge pipeline
+(`src/03_merge/T1_epa-full-merge.ipynb`).
 
 `epa-full.csv` is every WQ measurement, its full daily climate/streamflow
 record, its static station geography and soil, and every annual
-watershed/county/state contextual variable, in one CSV — intended to
-supersede the dashboard's current input, `data/tabular/merged/epa-climate-merged.csv`.
-Wiring `app.py` onto it is a separate, not-yet-done migration, since its
-`FEATURE_COLS` contract differs (see `CLAUDE.md`).
+watershed/county/state contextual variable, in one CSV. It supersedes the
+dashboard's former input, `data/tabular/merged/epa-climate-merged.csv`;
+`app.py` reads it directly, with its own `FEATURE_COLS` contract (30 columns —
+see `CLAUDE.md`).
+
+**Post-merge enrichment.** `src/04_eda/wqi-calculation.ipynb` appends 3 more
+columns in place (315 → 318), after the three read-only EDA notebooks in the
+same folder (`univariate-analysis.ipynb`, `bivariate-analysis.ipynb`,
+`multivariate-analysis.ipynb`; findings summarized in
+`src/04_eda/eda-summary.md`) characterize the merged table:
+
+| Column | Description |
+|---|---|
+| `WQI` | Water Quality Index for that sample (same station, same day), on a 0 (best) – 100 (worst) scale, built from up to 12 measured parameters grouped into eight pollution categories. |
+| `WQI_n_groups` | How many of the eight pollution groups the sample actually had a measurement for. |
+| `WQI_weight_coverage` | Share (0–1) of the index's total weight those measured groups carry — distinguishes a WQI computed from 3 parameters from one computed from 12, since both land on the same 0–100 scale. |
+
+These three columns are not part of `FEATURE_COLS` and are not read by
+`app.py` or the training notebooks; they exist for EDA and as a candidate
+summary/target variable for future work.
 
 ---
 
