@@ -365,8 +365,8 @@ training notebooks must move together and all **36 `.pkl` files must be retraine
 | Column | Reason | Confidence |
 |---|---|---|
 | `pct_row_crops` | Exact sum of `pct_corn + pct_soybean`; sole source of the rank deficiency; carries literally zero information | **certain** |
-| `isu_snowd_in` | 99.0% zero; only 15 distinct values; MI-implied r_equiv ≈ 0.05; unbinnable against **all 12** targets | **certain** |
-| `isu_snow_in` | 98.8% zero; 32 distinct values; same profile | **certain** |
+| `isu_snowd_in` | 99.0% zero; only 15 distinct values; MI-implied r_equiv ≈ 0.05; unbinnable against **all 12** targets — **but see the note below** | ~~certain~~ **re-measure** |
+| `isu_snow_in` | 98.8% zero; 32 distinct values; same profile — **but see the note below** | ~~certain~~ **re-measure** |
 | 2 of the 4 `npfert__*` / `npmanure__*` columns | VIF 61.3 / 57.1 / 55.8 / 54.6; N↔P correlate at 0.977 and 0.987; four columns spanning ~two dimensions. Keep one N and one P, or replace all four with their first two PCs | high |
 | `prism_tdmean_c`, `isu_max_feel_c`, `isu_min_feel_c` | The six-member thermal cluster is statistically one variable; keep `prism_tmax_c` + `prism_tmin_c` (or a single mean) and drop the rest | high |
 | `isu_avg_rh` | 83% of its target pairs are flat or irregular; mean \|ρ\| = 0.075, max 0.167 | medium |
@@ -375,6 +375,19 @@ training notebooks must move together and all **36 `.pkl` files must be retraine
 
 Per-feature diagnostics for this shortlist are in `outputs/bv_pair_profiles.csv` (shape class per
 pair), `outputs/mv_vif.csv` and `outputs/feature_variance_decomposition.csv`.
+
+> **Stale: the two snow rows were measured against fabricated data.** Every number quoted above for
+> `isu_snow_in` / `isu_snowd_in` predates a fix to `src/02_clean/tabular/climate/climate-clean.ipynb`,
+> which used to `fillna(0)` both columns. That fill manufactured ~190k zeros — **about 87% of the
+> column** — by asserting that the 45 of 62 ISU stations with no snow instrument measured zero
+> snowfall every day for a decade. The "98.8% / 99.0% zero" figures are therefore mostly an artefact
+> of the cleaner, not a property of Iowa's weather. Post-fix, `isu_snow_in` in `epa-full.csv` is
+> 81.9% null / 17.0% genuine zero and `isu_snowd_in` is 87.2% null / 11.9% zero, with all 553 and
+> 444 nonzero readings intact.
+>
+> The drop recommendation may well still hold — only eight stations carry real snow data at all, so
+> the column is sparse regardless — but it now rests on **honest sparsity** rather than on a zero
+> fraction the pipeline invented. Re-run the univariate and bivariate notebooks before acting on it.
 
 ### 4.2 Columns to drop from the table
 

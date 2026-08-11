@@ -62,7 +62,7 @@ input inventory for the merge stages that follow.
 | USGS discharge | `streamflow/usgs-iowa-discharge-clean.csv` | 1 row / gauge + date | **(key)** `site_no` + `date` |
 | USGS gauges | `streamflow/usgs-iowa-gauges-clean.csv` | 1 row / gauge | **(key)** `site_no`; also `huc8`, `county_fips`, lat/lon |
 | SSURGO soil attributes | `soil/ssurgo-iowa-attributes-clean.csv` | 1 row / map unit | **(key)** `mukey` |
-| CDL land use | `landuse/cdl-huc12-fractions-clean.csv` | 1 row / HUC-12 + year | **(key)** `huc12_code` + `year` |
+| CDL land use | `landuse/cdl-huc12-fractions-clean.csv` | 1 row / HUC-12 + year | **(key)** `huc12_code` + `year`; also 9 `pct_*_censored` flags **dropped by P5** — see §2 P5 |
 | Census population 2010–2020 | `census/iowa-census-population-2010-2020-clean.csv` | 1 row / city + year + estimate type | **(key)** `place` + `year` — **city grain, not county**; see §6 |
 | Census population 2020–2025 | `census/iowa-census-population-2020-2025-clean.csv` | same | same |
 | Station → HUC-12/10/8 crosswalk (spatial) | `nhdplus/wbd-huc12-station-crosswalk-clean.csv` | 1 row / station | **(key)** `MonitoringLocationIdentifier` → `huc12_code` / `huc10_code` / `huc8_code` |
@@ -93,9 +93,19 @@ carry **no `-clean`/`-merged` suffix** — the bare stage name plus `.csv`.
 | **P3** | `county-agriculture.csv` | `crop-yields-clean.csv` + `livestock-inventory-clean.csv` + `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `manure-animal-inventory-clean.csv` — each **pivoted wide** first (commodity/statistic/animal/nutrient values → columns) to avoid a many-rows-per-county-year fan-out | `county_fips` + `year` | 1 row / county + year |
 | **P3b** | `county-agriculture-asof.csv` | `np-fertilizer-clean.csv` + `np-manure-clean.csv` + `livestock-inventory-clean.csv` (cattle/hog head counts) | derived: **backward as-of** match on `county_fips` + `year`, plus a partial manure refresh (see §6) | 1 row / county + year, **dense for 2015–2025** |
 | **P4** | `state-chemical-spending.csv` | `crop-chemical-application-clean.csv` + `chemical-fertilizer-feed-spending-clean.csv`, pivoted wide | `state_fips` + `year` | 1 row / year (IA only — no spatial variation) |
-| **P5** | `huc12-landuse-bmp.csv` | `cdl-huc12-fractions-clean.csv` + `iowa-nrs-bmp-huc8-clean.csv` (pivoted wide by `practice_type`) | `huc8_code = left(huc12_code, 8)` + `year` | 1 row / HUC-12 + year (BMP values are broadcast to every child HUC-12 of a HUC-8 — see §6) |
+| **P5** | `huc12-landuse-bmp.csv` | `cdl-huc12-fractions-clean.csv` (its 9 `pct_*_censored` flags are reported, then **dropped** — see below) + `iowa-nrs-bmp-huc8-clean.csv` (pivoted wide by `practice_type`) | `huc8_code = left(huc12_code, 8)` + `year` | 1 row / HUC-12 + year (BMP values are broadcast to every child HUC-12 of a HUC-8 — see §6) |
 | **P6** | `npdes-facility.csv` | `npdes-dmrs-clean.csv` (**aggregated** to `npdes_id` + `fiscal_year` — e.g. total exceedances, violation count, mean `dmr_value` per parameter — to avoid the per-outfall-per-parameter fan-out) + `npdes-catchments-clean.csv` + `echo-facilities-clean.csv` + `echo-naics-clean.csv` + `echo-sics-clean.csv` + `npdes-attains-clean.csv` | `npdes_id` | 1 row / permit + fiscal year, carrying `wbd_huc12`/`huc8` for downstream spatial joins |
 | **P7** | `census-population.csv` | `iowa-census-population-2010-2020-clean.csv` concatenated with `iowa-census-population-2020-2025-clean.csv` (dedup overlap year 2020) | schema union | 1 row / city + year + estimate type — **held here, not merged further** (see §6) |
+
+> **P5 land-cover non-detects.** The CDL source rounds every fraction to four
+> decimals, so a reported `0.0000` means "below 5e-5", not "zero". The cleaner
+> treats those cells as left-censored: it substitutes `LOD/2` (2.5e-5) and emits
+> one `<col>_censored` boolean per fraction (282 cells across 273 rows in the
+> current extract, all in `pct_wetland` / `pct_open_water`). **P5 prints the
+> per-column counts and then drops the nine flags**, so `huc12-landuse-bmp.csv`
+> stays at 18 columns and nothing downstream of it changes width. The flags live
+> only in `02_clean/landuse/` — read them from there if an analysis needs to
+> distinguish a non-detect from a small measured share.
 
 ---
 

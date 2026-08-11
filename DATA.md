@@ -298,14 +298,29 @@ This dataset captures daily meteorological conditions — temperature, precipita
 | `min_rh` | Daily minimum relative humidity (%). |
 | `avg_rh` | Daily mean relative humidity (%). |
 | `max_rh` | Daily maximum relative humidity (%). |
-| `snow_in` | Daily snowfall (inches). Blank typically means none. |
-| `snowd_in` | Snow depth on the ground (inches). Blank typically means none. |
+| `snow_in` | Daily snowfall (inches). **Blank means "not measured", not "none"** — see the note below. |
+| `snowd_in` | Snow depth on the ground (inches). **Blank means "not measured", not "none"** — see the note below. |
 | `min_feel` | Daily minimum "feels-like" temperature (°F) — wind chill / heat index. |
 | `avg_feel` | Daily mean "feels-like" temperature (°F). |
 | `max_feel` | Daily maximum "feels-like" temperature (°F). |
 | `max_wind_speed_kts` | Daily maximum sustained wind speed (knots). |
 | `climo_high_f` | Climatological normal high temperature for that calendar day (°F). |
 | `climo_low_f` | Climatological normal low temperature for that calendar day (°F). |
+
+> **A blank `snow_in` / `snowd_in` is "not measured", not "no snow".** These read
+> like *event* variables that the feed reports only when snow occurs, and the
+> cleaner used to zero-fill them on that basis. The data contradicts it three
+> ways: the feed already encodes zero explicitly (28,434 literal `0.0` values in
+> `snow_in`); the null rate is **flat across the calendar** — 86.5% in January
+> against 85.9% in July, a spread under 3pp where a real event variable would
+> span ~50pp; and the missingness is a **station** property — of 62 stations,
+> **45 never report snow at all**, one reports only `0.0`, and eight more report
+> only a `0.0001`-inch sentinel, leaving just **eight stations with genuine snow
+> data** (six of them — DSM, DVN, DBQ, ALO, SUX, MCW — covering ~84% of days).
+> The zero-fill therefore fabricated **189,974** values against 28,434 real
+> zeros, ~87% of the column. Both columns now keep their `NaN`s; genuinely
+> reported zeros stay zeros. This is the same reasoning already applied to
+> `precip_in`.
 
 Cleaned output: [`isu-climate-clean.csv`](#cleaned-climate-outputs).
 
@@ -359,6 +374,11 @@ by the PRISM cleaner:
 All other columns (`precip_in`, `avg_wind_speed_kts`, `avg_wind_drct`, `min_rh`,
 `avg_rh`, `max_rh`, `snow_in`, `snowd_in`, `max_wind_speed_kts`) are unchanged
 from the raw schema.
+
+**Nothing is zero-filled.** `precip_in`, `snow_in` and `snowd_in` all keep their
+`NaN`s — for all three, missingness is a property of station instrumentation
+rather than of the weather (see the note in the raw section above). `snow_in`
+lands at 85.7% null and `snowd_in` at 90.0%, against ~53% for `precip_in`.
 
 **`data/tabular/02_clean/climate/prism-iowa-climate-clean.csv`** (~4.1M
 station-day rows) — one row per `station_id` + `date`, **de-duplicated so the
@@ -1042,11 +1062,21 @@ This dataset captures what fraction of each HUC-12 watershed is covered by corn,
 | `pct_open_water` | Fraction in open water. |
 | `pct_row_crops` | Combined fraction in row crops (corn + soybean + similar). |
 
+> **Zeros here are non-detects.** The download notebook writes each fraction as
+> `round(count / total, 4)`, so any class below **0.00005** of a watershed is
+> reported as `0.0000` — indistinguishable from a genuinely absent class. These
+> values are **left-censored at a reporting limit of 5e-5**, not measured zeros;
+> the cleaner below substitutes `LOD/2` and flags them.
+
 ### Cleaned land use output
 
 Produced by `src/02_clean/tabular/landuse/cdl-huc12-fractions-clean.ipynb`. The `HUC_12` key is renamed to `huc12_code` for consistency with the rest of the pipeline; fractions and row counts are range-validated.
 
-**`data/tabular/02_clean/landuse/cdl-huc12-fractions-clean.csv`** (18,854 rows) — one row per `(huc12_code, year)`:
+**Censoring.** Because the source rounds to four decimals, a reported `0.0000` means "below 5e-5", not "zero" (see the note above). The cleaner treats each such cell as a left-censored observation: it records the fact in a `<col>_censored` boolean and substitutes **`LOD/2` = 2.5e-5** for the value, so the fractions stay strictly positive and no model reads a bound as a measurement. In the current extract this affects **282 cells across 273 rows** — 97 in `pct_wetland` (0.51%) and 185 in `pct_open_water` (0.98%); no other column has ever contained a non-detect, so the `pct_row_crops = pct_corn + pct_soybean` identity is preserved exactly (the cleaner asserts it).
+
+The nine `_censored` flags are part of **this** file's contract only. `P5_huc12-landuse-bmp-merge.ipynb` reports and then drops them, so the downstream `huc12-landuse-bmp.csv` → `station-year-context.csv` → `epa-full.csv` column sets are unchanged. Any analysis needing to know which land-cover values were non-detects should read them from here.
+
+**`data/tabular/02_clean/landuse/cdl-huc12-fractions-clean.csv`** (18,854 rows × 20 cols) — one row per `(huc12_code, year)`:
 
 | Column | Description |
 |---|---|
@@ -1061,6 +1091,7 @@ Produced by `src/02_clean/tabular/landuse/cdl-huc12-fractions-clean.ipynb`. The 
 | `pct_wetland` | Fraction in wetland. |
 | `pct_open_water` | Fraction in open water. |
 | `pct_row_crops` | Combined fraction in row crops (corn + soybean + similar). |
+| `pct_*_censored` | **(9 columns)** One boolean per fraction above: `True` where the source reported `0.0000` and the value therefore carries the `LOD/2` substitution rather than a measurement. Dropped by `P5`. |
 
 ---
 

@@ -749,12 +749,12 @@ def _stat_tile(label: str, value: str) -> html.Div:
     )
 
 
-def _info_row(label: str, value: str) -> html.Div:
+def _info_row(label: str, value: str, value_color: str = TEXT_DARK) -> html.Div:
     return html.Div(
         style={"display": "flex", "justifyContent": "space-between", "gap": "8px", "padding": "4px 0"},
         children=[
             html.Span(label, style={"fontSize": "12px", "color": TEXT_LIGHT}),
-            html.Span(value, style={"fontSize": "12px", "color": TEXT_DARK, "fontWeight": "500", "textAlign": "right"}),
+            html.Span(value, style={"fontSize": "12px", "color": value_color, "fontWeight": "500", "textAlign": "right"}),
         ],
     )
 
@@ -801,6 +801,28 @@ def _performance_panel(target: Optional[str], model_type: Optional[str]) -> html
     ]
     if error_rate is not None and not pd.isna(error_rate):
         rows.append(_info_row("Typical error rate", f"{float(error_rate):.0f}%"))
+
+    # The memorization bar: "repeat this station's previous value" scored on the
+    # same held-out rows. A model that does not clear it is recalling the site
+    # rather than predicting the water.
+    persistence = metric_row.get("persistence_r2")
+    margin      = metric_row.get("model_minus_persistence")
+    if persistence is not None and not pd.isna(persistence):
+        rows.append(_info_row("Repeat-last-value baseline (R²)", _fmt_metric(float(persistence))))
+    if margin is not None and not pd.isna(margin):
+        margin = float(margin)
+        rows.append(_info_row(
+            "Beats the baseline by",
+            f"{'+' if margin >= 0 else '−'}{abs(margin):.3f} R²",
+            SUCCESS if margin >= 0 else DANGER,
+        ))
+
+    stations = metric_row.get("test_stations")
+    if stations is not None and not pd.isna(stations):
+        rows.append(html.Div(
+            f"Scored on {int(stations):,} monitoring stations the model never saw during training.",
+            style={"fontSize": "10px", "color": TEXT_LIGHT, "lineHeight": "1.5", "marginTop": "10px"},
+        ))
 
     return html.Div(style=SIDECARD_STYLE, children=rows)
 
