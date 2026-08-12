@@ -1,11 +1,8 @@
 # Water Quality Prediction
 
-An end-to-end machine learning project for forecasting water quality conditions at Iowa EPA monitoring stations. It combines water quality measurements, climate records, and agricultural data into a unified modeling pipeline, then serves predictions through an interactive Dash dashboard with map-based visualization.
+An end-to-end machine learning project for forecasting water quality conditions at Iowa EPA monitoring stations. It combines water quality measurements, climate records, streamflow, soil, and agricultural data into a single 315-column modeling table, then serves predictions for **thirteen** targets through an interactive Dash dashboard with map-based spatial interpolation.
 
-This repository is maintained as a completed project snapshot, with pre-trained artifacts and processed datasets included for reproducibility.
-It is organized so the project can be reviewed or run without rebuilding the full pipeline first.
-
-Small documentation-only updates may still be made over time to keep the repository presentation current.
+This repository is maintained as a completed project snapshot, with pre-trained artifacts and processed datasets included for reproducibility. It is organized so the project can be reviewed or run without rebuilding the full pipeline first.
 
 ---
 
@@ -18,156 +15,65 @@ Small documentation-only updates may still be made over time to keep the reposit
 - [How to Run the App](#how-to-run-the-app)
 - [Dashboard Features](#dashboard-features)
 - [Data Pipeline](#data-pipeline)
+- [Feature Contract](#feature-contract)
 - [Models](#models)
+- [Model Performance](#model-performance)
 - [How to Retrain the Models](#how-to-retrain-the-models)
-- [Additional Modeling Outputs](#additional-modeling-outputs)
+- [Testing](#testing)
 - [Tech Stack](#tech-stack)
 
 ---
 
 ## Project Overview
 
-This project enables predictive water quality modeling and analysis across Iowa using a comprehensive, multi-source dataset. The core application answers: **given climate conditions on a specific date, what water quality should we expect at monitoring stations across Iowa?**
+This project enables predictive water quality modeling and analysis across Iowa using a comprehensive, multi-source dataset. The core application answers: **given the location of an EPA monitoring station and a date, what water quality should we expect there?**
 
-The repository integrates nine data sources across tabular, spatial, image, and text modalities:
+The repository integrates data spanning water quality, climate, streamflow, soil, land use, agriculture, and regulatory sources into one modeling table (`data/03c_merge_tertiary/epa-full.csv`, 48,251 rows × 315 columns before EDA, 318 after). See [`DATA.md`](DATA.md) for the full data dictionary and [`MERGE.md`](MERGE.md) for exactly how each source is joined.
 
-- **Water Quality**: 971K EPA measurements across 1,667 monitoring stations and 80+ parameters
-- **Climate**: 4.3M daily records from ISU weather stations and PRISM gridded data
-- **Agriculture**: Crop yields, livestock, pesticide application, and nutrient inputs
-- **Regulatory**: 3.4M permit discharge records (NPDES) and water quality assessments (ATTAINS)
-- **Hydrology**: 561K daily streamflow records from 704 USGS gauges
-- **Soil**: 10.5K soil map units with hydrologic and chemical properties
-- **Land Use**: 11-year time series of 30 m resolution cropland classification
-- **Demographics**: Population and employment trends by county
-- **Imagery & Text**: Training images for water quality classification and city-level water summaries
+Three scikit-learn model families (Linear Regression, Random Forest, Gradient Boosting) are trained for each of **thirteen** water quality targets:
 
-The core modeling pipeline trains scikit-learn regression models for four water quality targets:
+| Target Variable | Unit |
+|---|---|
+| Water Temperature | °C |
+| Dissolved Oxygen | mg/L |
+| pH | pH |
+| Nitrate | mg/L as N |
+| Nitrite | mg/L as N |
+| Nitrate + Nitrite | mg/L as N |
+| Total Phosphorus | mg/L as P |
+| Specific Conductance | µS/cm |
+| Total Dissolved Solids | mg/L |
+| Total Suspended Solids | mg/L |
+| Turbidity | NTU |
+| E. coli | MPN/100mL |
+| WQI (composite Water Quality Index) | index, 0 = best, 100 = worst |
 
-| Target Variable | Unit | Use Cases |
-|---|---|---|
-| Water Temperature | °C | Thermal ecology, aquatic life habitat |
-| pH | pH | Acid mine drainage detection, alkalinity trends |
-| Dissolved Oxygen | mg/L | Hypoxia risk, aquatic stress prediction |
-| Nitrate | mg/L | Nutrient loading, agricultural runoff impacts |
+Predictions are delivered through a locally runnable Dash app. The user selects a target, a model family, and a date; the app runs inference across every monitoring station that has the necessary predictors and renders a spatially interpolated map of predicted values across Iowa, along with per-station hover detail and held-out performance context.
 
-Predictions are delivered through a locally runnable Dash app. The user selects a target, a model type, and a date, and the app runs inference across all monitoring stations before rendering a spatially interpolated map of predicted values across Iowa.
-
-Pre-trained model files are included in the repository so the dashboard works immediately without retraining. Beyond prediction, the assembled data supports watershed-scale analysis, permit compliance evaluation, and agricultural influence studies.
+Pre-trained model files (39 total — 13 targets × 3 families) are included in the repository so the dashboard works immediately without retraining.
 
 ---
 
 ## Data Sources
 
-This project assembles a comprehensive, multi-modal dataset covering water quality, climate, agriculture, regulatory compliance, streamflow, soil, and census data for Iowa.
+This project assembles a multi-modal dataset covering water quality, climate, streamflow, soil, land use, agriculture, NPDES regulatory compliance, and census data for Iowa.
 
 > 📑 **See [`DATA.md`](DATA.md) for the full data dictionary** — every column in every dataset described, with source links and a raw-data size table (rows, columns, MB).
 >
-> **Path note:** raw inputs live under `data/tabular/01_raw/<domain>/` and `data/spatial/01_raw/`; cleaned outputs under `data/tabular/02_clean/<domain>/`; merged modeling tables under `data/tabular/03_merged/`.
+> 📑 **See [`MERGE.md`](MERGE.md) for the merge plan** — how every cleaned table is joined into the terminal modeling table, with keys, grain, and verified row/column counts at every stage.
 
-### Water Quality (557 MB raw + clean)
-| Dataset | Source | File | Records |
-|---|---|---|---|
-| EPA Water Quality Measurements | [U.S. EPA Water Quality Portal (WQX)](https://www.waterqualitydata.us/) | `data/tabular/01_raw/water-quality/epa-wq.csv` | 970,946 observations |
-| EPA Monitoring Stations | [U.S. EPA / USGS NWIS](https://www.waterqualitydata.us/) | `data/tabular/01_raw/water-quality/epa-stations.csv` | 1,666 stations |
-| Cleaned & Pivoted Data | (processed) | `data/tabular/02_clean/water-quality/epa-wq-clean.csv` | station-date wide records |
+At a glance:
 
-80+ measured water quality parameters including temperature, pH, dissolved oxygen, nitrate, phosphate, turbidity, conductance, chlorophyll, bacteria (E. coli), and trace metals.
+- **Water Quality**: ~971K EPA WQX observations across 1,666 monitoring stations, pivoted to one row per station-day
+- **Climate**: ISU/IEM daily station records and PRISM gridded daily climate, joined per station-day
+- **Streamflow**: USGS daily discharge at ~700 gauges, matched to the nearest gauge per station
+- **Soil**: SSURGO map-unit properties (Ksat, available water capacity) via spatial join
+- **Land Use**: HUC-12-level cropland fractions (corn, soybean, developed, forest) from the USDA Cropland Data Layer
+- **Agriculture**: County-level nutrient loading (N/P from fertilizer and manure) and chemical spending from USDA NASS / USGS
+- **Regulatory**: NPDES facility density and ATTAINS impairment context near each station
+- **Demographics**: County population from the Census Bureau
 
-### Climate (254 MB raw + clean)
-| Dataset | Source | File | Records |
-|---|---|---|---|
-| ISU / IEM Climate Stations | [Iowa State University — Iowa Environmental Mesonet](https://mesonet.agron.iastate.edu/) | `data/tabular/01_raw/climate/isu-climate.csv` | 221,559 daily records |
-| PRISM Climate Grid | [PRISM Climate Group, Oregon State University](https://prism.oregonstate.edu/) | `data/tabular/01_raw/climate/prism-iowa-climate.csv` | 4.1M daily station-day records |
-| Cleaned Climate Data | (processed) | `data/tabular/02_clean/climate/isu-climate-clean.csv`, `prism-iowa-climate-clean.csv` | 221K + 4.1M records |
-
-Daily measurements: max/min temperature, dew point, precipitation, snowfall, snow depth, wind speed/direction, and humidity.
-
-### Agriculture (~23 MB)
-| Dataset | Source | File | Size |
-|---|---|---|---|
-| Crop Yields | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Yields.csv` | 1.8 MB |
-| Livestock Inventory | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Livestock-Inventory.csv` | 4.7 MB |
-| Crop Chemical Application | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Crop-Chemical-Application.csv` | 0.1 MB |
-| Fertilizer Spending | [USDA NASS Quick Stats](https://quickstats.nass.usda.gov/) | `data/tabular/01_raw/agriculture/USDA-NASS-Chemical-Fertilizer-Feed-Spending.csv` | 23 KB |
-| N-P Nutrient Inputs | [USGS (Falcone 2021, OFR 2020-1153)](https://www.sciencebase.gov/catalog/item/5ebad56382ce25b51361806a) | `data/tabular/01_raw/agriculture/N-P_from_*.xlsx` | 15 MB (1950–2017) |
-
-### Conservation BMPs (Iowa NRS Tracking, 3.6 MB)
-| Dataset | Source | File | Records |
-|---|---|---|---|
-| NRS Tracking — Full | [Iowa State University / Iowa NRS](https://www.nutrientstrategy.iastate.edu/) | `data/tabular/01_raw/bmp/iowa-nrs-tracking.csv` | 20,428 rows (2003–2022) |
-| NRS Tracking — HUC-8 BMP Practices | [Iowa State University / Iowa NRS](https://www.nutrientstrategy.iastate.edu/) | `data/tabular/01_raw/bmp/iowa-nrs-bmp-huc8.csv` | 2,195 rows |
-
-Annual practice adoption counts and acres by HUC-8 watershed (56 watersheds, 2003–2022) for CREP wetlands, bioreactors, saturated buffers, cover crops (NRCS practice 340), and erosion control structures. Joins to NHDPlus HUC-12 boundaries on the first 8 digits of the HUC-12 code.
-
-### NPDES Compliance & Permits (~1.3 GB, 4.9M records)
-| Dataset | Source | File | Records |
-|---|---|---|---|
-| Discharge Monitoring Reports | [EPA ECHO / ICIS-NPDES](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/NPDES_DMRS_FY*.csv` | 2.79M (11 files, FY2015–2025) |
-| Water Quality Assessments | [EPA ATTAINS](https://www.epa.gov/waterdata/attains) | `data/tabular/01_raw/npdes/NPDES_ATTAINS_AU_SUMMARIES.csv` | 820,292 assessment units |
-| NPDES Catchments | [EPA / NHDPlus](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/NPDES_CATCHMENTS.csv` | 1.26M catchment links |
-| ECHO Facility Metadata | [EPA ECHO (ICIS)](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/echo-facilities-iowa.csv` | 2,216 Iowa NPDES facilities |
-| ECHO NAICS Codes | [EPA ECHO](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/echo-naics-iowa.csv` | 1,668 permit-NAICS associations |
-| ECHO SIC Codes | [EPA ECHO](https://echo.epa.gov/) | `data/tabular/01_raw/npdes/echo-sics-iowa.csv` | 1,693 permit-SIC associations |
-
-Detailed permit-linked discharge monitoring with effluent limits, reported exceedances, violations, and water body impairment status. The DMR, ATTAINS, and Catchments files are national EPA extracts; ECHO facility data is Iowa-scoped and adds treatment-side context: facility type code, geocoded location, and SIC/NAICS industry classification. Join on `npdes_id` ↔ `EXTERNAL_PERMIT_NMBR`.
-
-### Streamflow (24 MB, 561K records)
-| Dataset | Source | File | Records |
-|---|---|---|---|
-| USGS Discharge Data | [USGS NWIS / Water Data](https://waterdata.usgs.gov/) | `data/tabular/01_raw/streamflow/usgs-iowa-discharge.csv` | 560,896 daily measurements |
-| USGS Gauge Locations | [USGS NWIS / Water Data](https://waterdata.usgs.gov/) | `data/tabular/01_raw/streamflow/usgs-iowa-gauges.csv` | 703 gauges |
-
-Daily streamflow (cubic feet per second) at 703 monitoring gauges across Iowa.
-
-### Soil (213 MB, 10.5K map units)
-| Dataset | Source | File |
-|---|---|---|
-| SSURGO Soil Properties | [USDA-NRCS Web Soil Survey](https://websoilsurvey.nrcs.usda.gov/) | `data/tabular/01_raw/soil/ssurgo-iowa-attributes.csv` |
-| SSURGO Soil Polygons | [USDA-NRCS Web Soil Survey](https://websoilsurvey.nrcs.usda.gov/) | `data/spatial/01_raw/ssurgo/iowa-mapunit-polygons.shp` |
-
-Soil characteristics: hydraulic group, drainage class, saturated hydraulic conductivity (Ksat), and available water capacity.
-
-### Land Use & Spatial (~470 MB)
-| Dataset | Source | File |
-|---|---|---|
-| Cropland Data Layer (CDL) Fractions | [USDA-NASS CroplandCROS](https://nassgeodata.gmu.edu/CropScape/) | `data/tabular/01_raw/landuse/cdl-huc12-fractions.csv` |
-| CDL Raster Layers | [USDA-NASS CroplandCROS](https://nassgeodata.gmu.edu/CropScape/) | `data/spatial/01_raw/cdl/cdl_iowa_YYYY.tif` (2015–2025) |
-| NHDPlus Watersheds (HUC-12) | [USGS / EPA NHDPlus V2.1](https://www.epa.gov/waterdata/nhdplus-national-data) | `data/spatial/01_raw/nhdplus/wbd-huc12-iowa/WBDSnapshot_Iowa.shp` |
-| NHDPlus Gage Locations | [USGS / EPA NHDPlus V2.1](https://www.epa.gov/waterdata/nhdplus-national-data) | `data/spatial/01_raw/nhdplus/gage-loc/` |
-
-30 m resolution cropland classification and watershed boundaries.
-
-### Census (demographic)
-| Dataset | Source | File |
-|---|---|---|
-| Census 2010–2019 | [U.S. Census Bureau (PEP)](https://www.census.gov/programs-surveys/popest.html) | `data/tabular/01_raw/census/Iowa_Census-2010-2019.xlsx` |
-| Census 2020–2025 | [U.S. Census Bureau (PEP)](https://www.census.gov/programs-surveys/popest.html) | `data/tabular/01_raw/census/Iowa-Census-2020-2025.xlsx` |
-
-Annual county population estimates from the Census Bureau's Population Estimates Program.
-
-### Image Data (40 samples)
-| Dataset | Source | Samples |
-|---|---|---|
-| Water Quality Images | (training set) | `data/images/water-images/train/` — 24 clean + 16 dirty water samples |
-
-Training dataset for water quality visual classification.
-
-### Text Data (20 summaries)
-| Dataset | Source | Files |
-|---|---|---|
-| City-level Water Summaries | (processed narratives) | `data/text/raw/` — Ankeny, Cedar Rapids, Council Bluffs, Des Moines, Davenport, and 15 other Iowa cities |
-
----
-
-### Data Integration & Linkage
-
-- **Spatial matching**: Each EPA monitoring station is linked to its nearest ISU climate station via haversine distance
-- **Temporal alignment**: All sources indexed by date (day, month, year) for time-series analysis
-- **Watershed integration**: HUC-12 codes link water quality observations, NPDES permits, and land use
-- **County linkage**: Agricultural and census data aggregated by county and joined spatially to monitoring locations
-
-**Geographic coverage**: Iowa statewide (1,667 EPA stations, 704 USGS gauges, 10.5K soil map units)  
-**Temporal coverage**: Climate and streamflow span 20+ years; NPDES monitoring FY2015–FY2025; agricultural data from 1950 onward
+**Geographic coverage**: Iowa statewide. **Temporal coverage**: water quality and climate records span multiple decades; the terminal modeling table (`epa-full.csv`) holds 48,251 station-day observation rows.
 
 ---
 
@@ -175,83 +81,51 @@ Training dataset for water quality visual classification.
 
 ```
 .
-├── app.py                          # Dash dashboard (main entry point)
-├── requirements.txt                # Python dependencies
+├── app.py                                  # Dash dashboard (main entry point)
+├── test_app.py                             # Smoke tests for the dashboard
+├── requirements.txt                        # Python dependencies
+├── DATA.md                                 # Full data dictionary
+├── MERGE.md                                # Merge plan: keys, stages, verified shapes
 │
 ├── data/
 │   ├── tabular/
-│   │   ├── water-quality/          # EPA & DNR measurements + station metadata
-│   │   │   ├── raw/                # 971K EPA WQX records, 1,667 station locations
-│   │   │   └── clean/              # Pivoted 79K station-date records
-│   │   ├── climate/                # ISU & PRISM climate data
-│   │   │   ├── raw/                # ISU (221K records) + PRISM (4.1M grid cells)
-│   │   │   └── clean/              # Standardized daily climate records
-│   │   ├── agriculture/            # USDA NASS crop & livestock data
-│   │   │   ├── raw/                # Yields, chemical application, livestock, fertilizer
-│   │   │   └── clean/              # Processed agricultural features
-│   │   ├── streamflow/             # USGS discharge measurements & gauge locations
-│   │   │   ├── raw/                # 561K daily streamflow records, 704 gauges
-│   │   │   └── clean/              # Processed streamflow data
-│   │   ├── npdes/                  # EPA permit compliance & water quality assessments
-│   │   │   └── raw/                # DMRS FY2015–2025, ATTAINS, catchments
-│   │   ├── soil/                   # NRCS SSURGO soil properties
-│   │   │   └── raw/                # 10.5K soil map units with attributes
-│   │   ├── landuse/                # NASS CDL fractions by watershed
-│   │   ├── census/                 # U.S. Census demographic data
-│   │   │   └── raw/                # 2010–2025 population & employment
-│   │   ├── merged/                 # Final joined tables used for modeling
-│   │   │   ├── epa-climate-merged.csv        # Main modeling dataset
-│   │   │   ├── epa-merged.csv                # EPA stations + measurements joined
-│   │   │   └── epa-to-climate-station-map.csv # Nearest-station spatial map
-│   │   └── modeling/               # Model evaluation outputs
-│   │       ├── sklearn_model_metrics.csv
-│   │       ├── multiple_linear_regression_metrics.csv
-│   │       └── multiple_linear_regression_coefficients.csv
+│   │   ├── 01_raw/<domain>/                # Raw downloaded inputs, by domain
+│   │   └── 02_clean/<domain>/               # Cleaned outputs, by domain
 │   ├── spatial/
-│   │   ├── cdl/                    # NASS Cropland Data Layer (2015–2025 rasters)
-│   │   ├── ssurgo/                 # NRCS soil map unit polygons (shapefiles)
-│   │   └── nhdplus/                # USGS National Hydrography Dataset
-│   │       ├── wbd-huc12-iowa/     # HUC-12 watershed boundaries
-│   │       ├── gage-loc/           # Stream gauge locations
-│   │       └── crosswalk/          # Hydrologic feature linkages
-│   ├── images/
-│   │   └── water-images/           # Training images (24 clean + 16 dirty samples)
-│   │       └── train/
-│   └── text/
-│       └── raw/                    # City-level water summary narratives (20 cities)
+│   │   ├── 01_raw/                         # Raw shapefiles/rasters (CDL, SSURGO, NHDPlus)
+│   │   └── 02_clean/                       # Tabular crosswalks from spatial joins
+│   ├── 03a_merge_primary/                  # P1–P7 primary merges (per-source, station/county grain)
+│   ├── 03b_merge_secondary/                # S1–S2 secondary merges
+│   ├── 03c_merge_tertiary/
+│   │   └── epa-full.csv                    # Terminal modeling table (48,251 × 318), used by app.py
+│   ├── images/water-images/                # Water quality classification image samples
+│   └── text/raw/                           # City-level water summary narratives
 │
 └── src/
-    ├── 01_download/
-    │   ├── cdl-cropland-download.ipynb       # NASS CDL rasters
-    │   ├── prism-climate-download.ipynb      # PRISM gridded climate
-    │   ├── ssurgo-soil-download.ipynb        # NRCS SSURGO soil polygons
-    │   ├── usgs-streamflow-download.ipynb    # USGS daily discharge
-    │   ├── echo-facilities-download.ipynb    # EPA ECHO NPDES facility metadata
-    │   └── iowa-nrs-bmp-download.ipynb       # Iowa NRS conservation BMP tracking
-    ├── cleaning/
-    │   └── tabular/
-    │       ├── water-quality/      # Notebooks: epa-wq-clean, epa-stations-clean
-    │       ├── climate/            # Notebook: climate-clean
-    │       └── agricultural/      # Notebook: usdaNass-agriculture-clean
-    ├── merge/
-    │   ├── merge_epa_climate.py              # Script: join EPA + climate by date/station
-    │   ├── merge_epa_climate_ag.py           # Script: add agricultural features
-    │   └── *.ipynb                           # Exploratory merge notebooks
-    └── modeling/
-        ├── train_sklearn_models.py           # Train and save all .pkl models
-        ├── multiple_linear_regression.py     # Standalone MLR script (numpy only)
-        ├── lr_water_temperature.pkl          # Pre-trained Linear Regression
-        ├── rf_water_temperature.pkl          # Pre-trained Random Forest
-        ├── gb_water_temperature.pkl          # Pre-trained Gradient Boosting
-        ├── lr_ph.pkl
-        ├── rf_ph.pkl
-        ├── gb_ph.pkl
-        ├── lr_dissolved_oxygen.pkl
-        ├── rf_dissolved_oxygen.pkl
-        ├── gb_dissolved_oxygen.pkl
-        ├── lr_nitrate.pkl
-        ├── rf_nitrate.pkl
-        └── gb_nitrate.pkl
+    ├── 01_download/                        # API/portal download notebooks, one per source
+    ├── 02_clean/
+    │   ├── tabular/<domain>/                # Cleaning notebooks, one per raw table
+    │   └── spatial/<domain>/                # Spatial-join crosswalk notebooks
+    ├── 03_merge/                           # P1–P7, S1–S2, T1 merge notebooks (see MERGE.md)
+    ├── 04_eda/
+    │   ├── univariate-analysis.ipynb        # Read-only EDA notebooks
+    │   ├── bivariate-analysis.ipynb
+    │   ├── multivariate-analysis.ipynb
+    │   ├── wqi-calculation.ipynb            # Appends WQI, WQI_n_groups, WQI_weight_coverage
+    │   ├── eda-summary.md                   # Consolidated EDA findings
+    │   └── outputs/                        # ~35 CSV/PNG diagnostic artifacts
+    └── 05_modeling/
+        ├── linear_regression/
+        │   ├── multiple_linear_regression.ipynb
+        │   └── lr_<target>.pkl              # 13 files
+        ├── random_forest/
+        │   ├── random_forest.ipynb
+        │   └── rf_<target>.pkl              # 13 files
+        ├── gradient_boosting/
+        │   ├── gradient_boosting.ipynb
+        │   └── gb_<target>.pkl              # 13 files
+        ├── model_metrics.csv                # Held-out test metrics for all 39 models
+        └── model_outcomes.md                # Human-readable performance summary
 ```
 
 ---
@@ -287,7 +161,7 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-This installs everything needed: Dash, Plotly, pandas, NumPy, SciPy, scikit-learn, and the full Jupyter environment.
+This installs everything needed: Dash, Plotly, pandas, NumPy, SciPy, scikit-learn, GeoPandas, and the full Jupyter environment.
 
 ---
 
@@ -305,13 +179,7 @@ Then open your browser and go to:
 http://127.0.0.1:8050
 ```
 
-The app loads all twelve pre-trained `.pkl` models from `src/modeling/` at startup — no retraining needed. A green status badge in the sidebar confirms how many models loaded successfully.
-
-To run the lightweight regression tests:
-
-```bash
-./venv/bin/python -m unittest test_app.py test_model_feature_engineering.py
-```
+The app loads all 39 pre-trained `.pkl` models from `src/05_modeling/<family>/` at startup, along with `data/03c_merge_tertiary/epa-full.csv` and `src/05_modeling/model_metrics.csv` — no retraining needed. Any target/model combination whose file is missing, or whose stored feature list disagrees with the app's, is disabled in the UI rather than crashing the app.
 
 ---
 
@@ -320,144 +188,141 @@ To run the lightweight regression tests:
 The dashboard is organized into a left control panel and a right map panel.
 
 **Left Panel — Controls:**
-- **Target Variable** — choose one of four water quality parameters to predict (Water Temperature, pH, Dissolved Oxygen, Nitrate)
+- **Target Variable** — choose one of thirteen water quality parameters (twelve measured parameters plus the composite WQI)
 - **Prediction Model** — switch between Linear Regression, Random Forest, and Gradient Boosting
-- **Prediction Date** — pick any date using the date picker, or use the quick-select buttons (Today, In 1 week, In 2 weeks, In 1 month, In 6 months, In 1 year)
-- **Run Prediction** — triggers inference across all monitoring stations
+- **Prediction Date** — pick any date, or use the quick-select buttons (Today, In 1 week, In 2 weeks, In 1 month, In 6 months, In 1 year)
+- **Run Prediction** — runs inference across every monitoring station and a held-out performance summary for the selected target/model
 
 **Right Panel — Map:**
-- Displays all Iowa EPA monitoring stations on a scoped U.S. map
-- After running a prediction, shows a color-coded interpolated surface across the station network using cubic spline spatial interpolation
-- Station markers are overlaid on top of the interpolated grid with per-station predicted values visible on hover
-- Prediction summary panel shows Min, Max, Mean, and Std Dev for the current prediction
+- Displays Iowa EPA monitoring stations on a scoped U.S. map
+- After running a prediction, shows a color-coded interpolated surface (`scipy.griddata`, cubic with linear fallback) across the station network, anchored to the 2nd–98th percentile of station predictions to avoid spline overshoot distorting the display
+- Station markers overlay the interpolated grid with per-station predicted values on hover, reverse-geocoded to the nearest major Iowa city
+- Summary panel shows Min, Max, Mean, and Std Dev for the current prediction, plus the model's held-out R², error rate, and its margin over a same-station persistence baseline
 
-**Color scales by target:**
-- Water Temperature — Red-Yellow-Blue (diverging)
-- pH — Red-Yellow-Green
-- Dissolved Oxygen — Blues
-- Nitrate — Yellow-Orange-Red
+**Color scales by target** (`app.py::TARGET_COLORSCALES`): e.g. Water Temperature — RdYlBu (reversed); pH — RdYlGn; Dissolved Oxygen — Blues; the nitrogen/turbidity/solids family — Yellow-Orange-Red/Brown ramps; WQI — RdYlGn reversed (green = good/low, red = bad/high, since WQI runs 0=best to 100=worst).
 
 ---
 
 ## Data Pipeline
 
-The project follows a three-stage pipeline. Pre-processed outputs are already committed to the repository so you can skip to running the app, but the full pipeline can be re-run from scratch.
-
-### Stage 1 — Cleaning
-
-Each raw dataset is cleaned in a Jupyter notebook under `src/cleaning/`:
-
-| Notebook | What it does |
-|---|---|
-| `water-quality/epa-wq-clean.ipynb` | Filters EPA water quality records, pivots from long to wide format (one row per station-date, one column per parameter), standardizes units |
-| `water-quality/epa-stations-clean.ipynb` | Cleans station metadata, extracts lat/lon, deduplicates |
-| `climate/climate-clean.ipynb` | Parses ISU climate records, standardizes date format, handles missing values |
-| `agricultural/usdaNass-agriculture-clean.ipynb` | Cleans USDA NASS agricultural features |
-
-### Stage 2 — Merging
-
-Cleaned tables are joined in `src/merge/`:
-
-1. **EPA stations + measurements** — inner join on `MonitoringLocationIdentifier` to produce `epa-merged.csv`
-2. **Spatial matching** — each EPA station is matched to its nearest ISU climate station by haversine distance, producing `epa-to-climate-station-map.csv`
-3. **EPA + Climate join** — `merge_epa_climate.py` joins `epa-merged.csv` with `isu-climate-clean.csv` on `(climate_station, date)`, yielding the main modeling table `epa-climate-merged.csv`
-4. **Add agricultural features** — `merge_epa_climate_ag.py` optionally extends the merged table with USDA NASS data
-
-The final modeling dataset `data/tabular/merged/epa-climate-merged.csv` contains one row per station-date observation with all water quality targets and climate features side by side.
-
-### Stage 3 — Modeling
-
-`src/modeling/train_sklearn_models.py` trains three model types (Linear Regression, Random Forest, Gradient Boosting) for each of the four targets and saves them as `.pkl` files:
+The project is a linear, five-stage pipeline. Pre-processed artifacts are committed at every stage so the app and notebooks work without re-running anything upstream.
 
 ```
-lr_water_temperature.pkl    rf_water_temperature.pkl    gb_water_temperature.pkl
-lr_ph.pkl                   rf_ph.pkl                   gb_ph.pkl
-lr_dissolved_oxygen.pkl     rf_dissolved_oxygen.pkl     gb_dissolved_oxygen.pkl
-lr_nitrate.pkl              rf_nitrate.pkl              gb_nitrate.pkl
+src/01_download/   → data/tabular/01_raw/         API/portal download notebooks
+src/02_clean/      → data/tabular/02_clean/       Cleaning notebooks, one per raw table
+                     data/spatial/02_clean/       Spatial-join crosswalks (e.g. station → HUC-12)
+src/03_merge/      → data/03a_merge_primary/      P1–P7: per-source merges onto station/county grain
+                     data/03b_merge_secondary/    S1–S2: station-day + station-year context
+                     data/03c_merge_tertiary/     T1: epa-full.csv, the terminal modeling table
+src/04_eda/        → epa-full.csv (in place)      3 read-only EDA notebooks + WQI calculation
+src/05_modeling/   → src/05_modeling/<family>/*.pkl   3 training notebooks, 13 targets each
+                     model_metrics.csv
+app.py             ← epa-full.csv + <family>/*.pkl + model_metrics.csv
 ```
+
+Full per-stage detail — every notebook, its output file, keys, and verified row/column counts — is in [`MERGE.md`](MERGE.md). Stage-1/2 source detail is in [`DATA.md`](DATA.md).
+
+`src/04_eda/wqi-calculation.ipynb` appends three columns to `epa-full.csv` in place: `WQI` (0–100, 0 = best), `WQI_n_groups`, and `WQI_weight_coverage` — present on 56.6% of rows (943 stations). These are not part of the model feature set; `WQI` is itself the thirteenth prediction target.
+
+---
+
+## Feature Contract
+
+Every model is trained on the same **29 columns**, in a fixed order, shared across `app.py` and all three training notebooks: 25 station-level base features read straight from `epa-full.csv`, plus 4 temporal features derived from the observation/prediction date.
+
+**Base features (25):** location (`LatitudeMeasure`, `LongitudeMeasure`), distance to the nearest climate station and streamflow gauge, PRISM climate (`prism_tmax_c`, `prism_tmin_c`, `prism_ppt_mm`, `prism_tdmean_c`), ISU daily weather (wind, humidity, snow, feels-like temps), streamflow discharge, soil (`ksat_mean`, `awc_mean`), land cover fractions (`pct_corn`, `pct_soybean`, `pct_developed`, `pct_forest`), and nutrient loading (N/P from fertilizer and manure).
+
+**Temporal features (4):** `doy`, `doy_sin`, `doy_cos` (cyclical day-of-year encoding), `obs_year`.
+
+`pct_row_crops` exists in `epa-full.csv` but is deliberately excluded — it equals `pct_corn + pct_soybean` exactly on every row and was a pure rank-deficiency problem (condition number 1.3e15 with it in, 27.8 without), carrying no information.
+
+Each `.pkl` stores its own `feature_cols`, checked against the app's feature list at load time; a mismatch disables that model in the UI rather than risking a silently misaligned prediction.
 
 ---
 
 ## Models
 
-### Features
+### Model files
 
-All three model types are trained on the same twelve inference features:
+Each `.pkl` in `src/05_modeling/<family>/` holds a plain dict, not a bare estimator:
 
-| Feature | Description |
-|---|---|
-| `doy` | Day of year (1–366) — primary seasonal signal |
-| `gdd_40_86` | Growing degree days (base 40°F, max 86°F) |
-| `high` | Daily high temperature (°F) |
-| `highc` | Daily high temperature (°C) |
-| `low` | Daily low temperature (°F) |
-| `lowc` | Daily low temperature (°C) |
-| `precip` | Daily precipitation (inches) |
-| `snow` | Daily snowfall (inches) |
-| `snowd` | Snow depth on ground (inches) |
-| `distance_to_climate_station_km` | Distance from EPA station to nearest climate station |
-| `LatitudeMeasure` | EPA monitoring station latitude |
-| `LongitudeMeasure` | EPA monitoring station longitude |
+```python
+{"pipeline": Pipeline, "target_transform": "none" | "log10",
+ "log_offset": float | None, "smearing_factor": float,
+ "feature_cols": [...29 names...]}
+```
 
-### Model Architecture
+`pipeline` is a fitted scikit-learn `Pipeline`:
 
-Each saved model is a scikit-learn `Pipeline` that keeps runtime inference
-compatible with the same raw input features while refining them during
-training:
+1. `SimpleImputer(strategy="median")` — models impute missing predictors internally, so the app passes raw feature values straight through
+2. `StandardScaler()` — linear regression only
+3. Estimator — `LinearRegression`, `RandomForestRegressor`, or `HistGradientBoostingRegressor` (the gradient boosting pipeline uses early stopping)
 
-1. `SimpleImputer(strategy="median")` — fills missing climate values
-2. Derived features — cyclical seasonality (`sin/cos(doy)`), temperature range, and aggregate moisture
-3. Optional `StandardScaler` for the linear model
-4. Model — `LinearRegression`, tuned `RandomForestRegressor`, or `HistGradientBoostingRegressor`
+### Target transform
 
-An 80/20 train/test split with `random_state=42` is used for all targets.
+28 of the 39 models regress on the raw target scale; **11 are fitted on `log10(y + c)`** and their predictions are back-transformed (with Duan's smearing correction) before display. Which (target, family) pairs take the log is decided by a cross-validated bake-off in each training notebook — comparing MAE in the target's own units, with guardrails against targets that are mostly zero (Nitrate, Nitrite) or can be negative (Water Temperature) — not asserted by hand. The outcome: `E. coli`, `Total Suspended Solids`, and `Turbidity` take the log in all three families; `Total Phosphorus` takes it for Random Forest and Gradient Boosting only; everything else, including WQI, stays raw. See [`src/05_modeling/model_outcomes.md`](src/05_modeling/model_outcomes.md) for the full selection methodology.
 
-### Linear Regression (numpy implementation)
+### Train/test split
 
-`src/modeling/multiple_linear_regression.py` also includes a from-scratch multiple linear regression implementation using `numpy.linalg.lstsq` (no scikit-learn). This was used to generate the evaluation CSVs in `data/tabular/modeling/`. It supports command-line arguments for data path, output directory, target selection, and minimum sample thresholds.
+All three notebooks use `GroupShuffleSplit(test_size=0.2, random_state=42)` grouped on `MonitoringLocationIdentifier` — 20% of the *stations* that measured a target are held out whole, so every reported score answers "how well does this predict at a station the model has never seen?" This replaced a row-level split under which 99%+ of test rows shared a station with training data, which let latitude/longitude alone drive apparent accuracy. See [`src/04_eda/eda-summary.md`](src/04_eda/eda-summary.md) and [`src/05_modeling/model_outcomes.md`](src/05_modeling/model_outcomes.md) for the before/after comparison.
+
+Each model's R² is also reported alongside a same-station **persistence baseline** ("this station's next value equals its previous value") on the same held-out rows — the memorization bar. Three targets (Specific Conductance, Total Dissolved Solids, Total Phosphorus) do not clear it in any family.
+
+---
+
+## Model Performance
+
+Held-out test-set R² by target and model family (raw scale; **bold** = the model was fitted on `log10` and R² is shown on the log scale, where it is the meaningful number). Full metrics — RMSE, MAE, error rate, persistence baselines, station/row counts — are in [`src/05_modeling/model_metrics.csv`](src/05_modeling/model_metrics.csv) and summarized in [`src/05_modeling/model_outcomes.md`](src/05_modeling/model_outcomes.md).
+
+| Target | Linear Regression | Random Forest | Gradient Boosting |
+|---|--:|--:|--:|
+| Water Temperature | 0.895 | 0.947 | 0.940 |
+| Specific Conductance | 0.220 | 0.655 | 0.262 |
+| Total Dissolved Solids | 0.421 | 0.533 | 0.432 |
+| Nitrate + Nitrite | 0.218 | 0.505 | 0.515 |
+| Dissolved Oxygen | 0.388 | 0.491 | 0.467 |
+| Nitrate | 0.172 | 0.459 | 0.393 |
+| pH | 0.171 | 0.412 | 0.349 |
+| WQI | 0.076 | 0.337 | 0.278 |
+| E. coli (log) | **0.204** | **0.355** | **0.358** |
+| Total Suspended Solids (log) | **0.151** | **0.367** | **0.338** |
+| Turbidity (log) | **0.062** | **0.330** | **0.283** |
+| Total Phosphorus | 0.023 | **0.175** | **0.189** |
+| Nitrite | -0.003 | 0.003 | -0.145 |
+
+Random Forest is the strongest or near-strongest family on almost every target; Water Temperature is the best-predicted target across all three families (R² 0.90–0.95). E. coli, Total Phosphorus, Nitrite, and Turbidity remain hard — sparse/skewed measurements and station-level heterogeneity limit generalization to unseen stations, which the grouped split surfaces rather than hides.
 
 ---
 
 ## How to Retrain the Models
 
-If you want to regenerate the `.pkl` files from the merged dataset:
+Each notebook trains all 13 targets, overwrites its family's 13 `.pkl` files, and rewrites only its family's rows of `model_metrics.csv` (the other two families' rows are untouched), so the notebooks may be run in any order:
 
 ```bash
-# Activate your virtual environment first
-# macOS / Linux:  source venv/bin/activate
-# Windows:        venv\Scripts\activate
+source venv/bin/activate
 
-python src/modeling/train_sklearn_models.py
+jupyter nbconvert --to notebook --execute --inplace src/05_modeling/linear_regression/multiple_linear_regression.ipynb
+jupyter nbconvert --to notebook --execute --inplace src/05_modeling/random_forest/random_forest.ipynb
+jupyter nbconvert --to notebook --execute --inplace src/05_modeling/gradient_boosting/gradient_boosting.ipynb
 ```
 
-This will print training progress and evaluation metrics (R², RMSE, MAE) for each target and model type, then overwrite the `.pkl` files in `src/modeling/`.
+Each notebook runs in well under a minute. After retraining, regenerate `src/05_modeling/model_outcomes.md` by hand from the new `model_metrics.csv`.
 
-To also regenerate the CSV modeling outputs using the numpy-based linear regression:
+To re-run an upstream cleaning or merge notebook non-interactively (e.g. after a data refresh):
 
 ```bash
-python src/modeling/multiple_linear_regression.py
-```
-
-Optional arguments:
-```
---data-path PATH       Path to the merged CSV (default: data/tabular/merged/epa-climate-merged.csv)
---output-dir DIR       Output directory for metrics/coefficients CSVs
---targets NAME [...]   Specific target CharacteristicName values to model
---top-n N              Number of most frequent targets to model (default: 5)
---min-samples N        Minimum rows required to train a target (default: 100)
---test-size FLOAT      Fraction held out for testing (default: 0.2)
---seed INT             Random seed (default: 42)
+jupyter nbconvert --to notebook --execute src/02_clean/tabular/water-quality/epa-wq-clean.ipynb
 ```
 
 ---
 
-## Additional Modeling Outputs
+## Testing
 
-The repository includes pre-generated evaluation outputs for both training paths:
+```bash
+python -m unittest test_app.py
+```
 
-- [`data/tabular/modeling/sklearn_model_metrics.csv`](data/tabular/modeling/sklearn_model_metrics.csv) — held-out metrics for the saved scikit-learn dashboard models
-- [`data/tabular/modeling/multiple_linear_regression_metrics.csv`](data/tabular/modeling/multiple_linear_regression_metrics.csv) — R², RMSE, MAE, sample counts per target
-- [`data/tabular/modeling/multiple_linear_regression_coefficients.csv`](data/tabular/modeling/multiple_linear_regression_coefficients.csv) — intercept and feature coefficients per target
+`test_app.py` is the whole suite: it smoke-tests the full Dash callback path (importing `app` loads all 39 `.pkl` files and `epa-full.csv`), checks the 29-column feature contract, and runs a live prediction for the first available target/model combination. It requires the `.pkl` files, `epa-full.csv`, and `model_metrics.csv` to be present.
 
 ---
 
@@ -465,10 +330,10 @@ The repository includes pre-generated evaluation outputs for both training paths
 
 | Category | Libraries |
 |---|---|
-| Dashboard | Dash 4.x, Plotly 6.x |
+| Dashboard | Dash 4.x, Plotly 6.x, dash-bootstrap-components |
 | Data processing | pandas, NumPy |
 | Machine learning | scikit-learn (Linear Regression, Random Forest, HistGradientBoosting, Pipeline, SimpleImputer, StandardScaler) |
-| Spatial interpolation | SciPy (`griddata` — cubic spline) |
+| Spatial interpolation | SciPy (`griddata` — cubic with linear fallback) |
 | Geospatial | GeoPandas, Shapely, pyproj, Folium |
 | Notebooks | JupyterLab, IPython |
 | Visualization | Matplotlib, Seaborn |
@@ -478,5 +343,4 @@ The repository includes pre-generated evaluation outputs for both training paths
 
 ## Status
 
-The project is fully functional. The data has been cleaned and merged, all twelve trained models are stored in the repository, and the dashboard can be launched locally with a single command for interactive prediction and visualization across Iowa's water monitoring network.
-Lightweight regression tests are also included for the dashboard and feature-engineering path.
+The full pipeline — download through modeling — is built and reproducible from committed artifacts. All 39 models (13 targets × 3 families) are trained and stored in the repository, and the dashboard launches locally with a single command for interactive prediction and visualization across Iowa's water monitoring network. See `CLAUDE.md` for the detailed technical contract between the app and the models (feature order, target transforms, metrics schema) if you're modifying the pipeline.
