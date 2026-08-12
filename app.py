@@ -13,14 +13,20 @@ Expected files on the server (set paths in CONFIGURATION below):
                               gradient_boosting/gb_<target>.pkl
                             e.g. random_forest/rf_specific_conductance.pkl
 
-Twelve targets are supported (water temperature, dissolved oxygen, pH,
+Thirteen targets are supported (water temperature, dissolved oxygen, pH,
 nitrate, nitrite, nitrate + nitrite, total phosphorus, specific conductance,
-total dissolved solids, total suspended solids, turbidity, E. coli), each in
-three model flavours — 36 pkl files in total.
+total dissolved solids, total suspended solids, turbidity, E. coli, and the
+composite WQI), each in three model flavours — 39 pkl files in total.
 
-Each .pkl must be a scikit-learn Pipeline (or any object with .predict())
-whose feature order matches FEATURE_COLS exactly. The pipelines impute
+Each .pkl holds a dict: {"pipeline", "target_transform", "log_offset",
+"smearing_factor", "feature_cols"}. The pipeline's feature order must match
+FEATURE_COLS exactly — it is checked at load time. The pipelines impute
 missing predictors internally, so the app may pass NaNs straight through.
+
+Some models were fitted on log10(y + c) and predict on that scale rather than
+in the target's own units. Which ones is decided per (target, family) by a
+cross-validated bake-off in the training notebooks, not by target name, so it
+travels inside the .pkl; _to_raw_scale applies the inverse.
 
 If a model file is missing the app still starts — that target/model
 combination is simply disabled in the UI.
@@ -33,7 +39,7 @@ import warnings
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -74,8 +80,10 @@ BASE_FEATURE_COLS = [
     "streamflow_discharge_cfs",
     # Soil
     "ksat_mean", "awc_mean",
-    # Land cover
-    "pct_corn", "pct_soybean", "pct_developed", "pct_forest", "pct_row_crops",
+    # Land cover. `pct_row_crops` is deliberately absent: it equals
+    # pct_corn + pct_soybean exactly on every row, so including it made the
+    # design matrix singular without adding a fact (eda-summary.md §4.1).
+    "pct_corn", "pct_soybean", "pct_developed", "pct_forest",
     # Nutrient loading context
     "npfert__n__total_kg", "npfert__p__total_kg",
     "npmanure__total__n_kg", "npmanure__total__p_kg",
@@ -101,6 +109,9 @@ TARGET_COLS = {
     "Total Suspended Solids": "Total suspended solids_value",
     "Turbidity":              "Turbidity_value",
     "E. coli":                "Escherichia coli_value",
+    # Composite index from src/04_eda/wqi-calculation.ipynb — 0 = best,
+    # 100 = worst. Present on 56.6% of rows (943 stations).
+    "WQI":                    "WQI",
 }
 
 # Model type display name → (filename prefix, sub-folder under MODEL_DIR)
@@ -137,6 +148,7 @@ TARGET_UNITS = {
     "Total Suspended Solids": "mg/L",
     "Turbidity":              "NTU",
     "E. coli":                "MPN/100mL",
+    "WQI":                    "index",
 }
 
 TARGET_COLORSCALES = {
@@ -152,6 +164,9 @@ TARGET_COLORSCALES = {
     "Total Suspended Solids": "YlOrBr",
     "Turbidity":              "YlOrBr",
     "E. coli":                "Reds",
+    # WQI runs 0 = best to 100 = worst, so the ramp must NOT be reversed:
+    # green at the low end, red at the high end.
+    "WQI":                    "RdYlGn_r",
 }
 
 MODEL_DESCRIPTIONS = {
@@ -173,6 +188,7 @@ TARGET_SHORT_NOTES = {
     "Total Suspended Solids": "Use this to inspect sediment and particulate load patterns.",
     "Turbidity": "Use this to compare water clarity across the network.",
     "E. coli": "Use this to inspect likely bacterial-contamination hotspots.",
+    "WQI": "Use this as a single roll-up of overall degradation — 0 is best, 100 is worst.",
 }
 
 
@@ -342,6 +358,18 @@ def _target_assessment(target: Optional[str], value: Optional[Union[float, int]]
             return {"label": "Elevated", "detail": "Between the geomean and single-sample recreational thresholds.", "color": "#d97706"}
         return {"label": "High Concern", "detail": "Above the single-sample recreational threshold (235 MPN/100mL).", "color": DANGER}
 
+    if target == "WQI":
+        # Note the direction: this index runs 0 = best to 100 = worst, the
+        # opposite of most "quality score" scales. Bands follow the quartiles of
+        # the observed distribution (median 43.3, IQR 31.5-57.5) rather than any
+        # published standard — this index is defined in
+        # src/04_eda/wqi-calculation.ipynb, not by a regulator.
+        if val < 31.5:
+            return {"label": "Least Degraded", "detail": "In the cleanest quarter of observed samples (index below 31.5).", "color": SUCCESS}
+        if val < 57.5:
+            return {"label": "Typical", "detail": "Within the middle half of observed samples (index 31.5-57.5).", "color": "#d97706"}
+        return {"label": "Most Degraded", "detail": "In the most degraded quarter of observed samples (index above 57.5).", "color": DANGER}
+
     return {
         "label": "Measured",
         "detail": "Predicted value available.",
@@ -415,29 +443,73 @@ def _nearest_station_name(lat: float, lon: float) -> str:
 #   • FEATURE_COLS order is contractual: the pkl was trained with this
 #     exact column order, so we must replicate it faithfully at inference
 # ─────────────────────────────────────────────────────────────
-def load_models() -> dict:
+def load_models() -> tuple:
     """
     Walk MODEL_DIR/<family>/ looking for files named {prefix}_{stem}.pkl.
-    Returns nested dict: models[target_label][model_type] = loaded pipeline.
+
+    Each .pkl holds a dict written by the training notebooks:
+
+        {"pipeline": Pipeline, "target_transform": "none" | "log10",
+         "log_offset": float | None, "smearing_factor": float,
+         "feature_cols": [...]}
+
+    Whether a model was fitted on the raw target or on log10(y + c) is decided
+    per (target, family) by a cross-validated bake-off in the notebooks, so it
+    cannot be inferred from the target name — it travels inside the artifact
+    instead, which is what stops a log10 prediction from ever being rendered as
+    mg/L because a metrics file went stale.
+
+    Returns (models, transforms):
+      models[target][family]     -> the fitted pipeline
+      transforms[(target, family)] -> (offset, smearing) or None if raw-scale
+
     Missing files are skipped with a warning; the app still starts.
     """
     models = {target: {} for target in TARGET_COLS}
-    model_dir = MODEL_DIR
+    transforms: Dict[tuple, Optional[Tuple[float, float]]] = {}
 
     for target_label, stem in TARGET_STEMS.items():
         for model_label, prefix in MODEL_PREFIXES.items():
-            pkl_path = model_dir / MODEL_SUBDIRS[model_label] / f"{prefix}_{stem}.pkl"
+            pkl_path = MODEL_DIR / MODEL_SUBDIRS[model_label] / f"{prefix}_{stem}.pkl"
             if not pkl_path.exists():
                 print(f"[WARNING] Model not found: {pkl_path} — "
                       f"'{target_label} / {model_label}' will be unavailable.")
                 continue
+
             with open(pkl_path, "rb") as f:
-                models[target_label][model_label] = pickle.load(f)
+                artifact = pickle.load(f)
+
+            # Pre-transform pkl files held a bare Pipeline. Those were always
+            # raw-scale, so treating them as such stays correct.
+            if not isinstance(artifact, dict):
+                models[target_label][model_label] = artifact
+                transforms[(target_label, model_label)] = None
+                print(f"[INFO] Loaded model (legacy bare pipeline): {pkl_path}")
+                continue
+
+            saved_cols = artifact.get("feature_cols")
+            if saved_cols is not None and list(saved_cols) != FEATURE_COLS:
+                print(f"[WARNING] {pkl_path} was trained on a different feature "
+                      f"set ({len(saved_cols)} cols) than app.py expects "
+                      f"({len(FEATURE_COLS)}) — '{target_label} / {model_label}' "
+                      "disabled to avoid silently mismatched predictions.")
+                continue
+
+            models[target_label][model_label] = artifact["pipeline"]
+            if artifact.get("target_transform") == "log10":
+                transforms[(target_label, model_label)] = (
+                    float(artifact["log_offset"]),
+                    float(artifact["smearing_factor"]),
+                )
+            else:
+                transforms[(target_label, model_label)] = None
             print(f"[INFO] Loaded model: {pkl_path}")
 
     loaded = sum(len(v) for v in models.values())
-    print(f"[INFO] {loaded} model(s) loaded from '{MODEL_DIR}/'")
-    return models
+    n_log = sum(1 for v in transforms.values() if v is not None)
+    print(f"[INFO] {loaded} model(s) loaded from '{MODEL_DIR}/' "
+          f"({n_log} fitted on log10(y + c))")
+    return models, transforms
 
 
 def load_model_metrics() -> pd.DataFrame:
@@ -477,9 +549,40 @@ def load_station_data() -> pd.DataFrame:
     return stations
 
 
-MODELS = load_models()
+MODELS, MODEL_TRANSFORMS = load_models()
 STATIONS = load_station_data()
 MODEL_METRICS = load_model_metrics()
+
+
+# ─────────────────────────────────────────────────────────────
+# TARGET BACK-TRANSFORM
+# Some models were fitted on log10(y + c) and so predict on that
+# scale. Which ones is not a property of the target — the
+# notebooks choose per (target, family) via a cross-validated
+# bake-off, and e.g. total phosphorus takes the log for the two
+# tree families but not for linear regression.
+#
+# The parameters ride inside the .pkl, so this cannot fall out
+# of sync with a stale model_metrics.csv. The inverse itself
+# lives here rather than in the pickle because baking it in
+# would need a custom estimator class importable at unpickle
+# time — the fragility that got model_feature_engineering.py
+# deleted. A dict of a Pipeline and two floats needs no such
+# class.
+# ─────────────────────────────────────────────────────────────
+def _to_raw_scale(target: str, model_type: str, y_pred: np.ndarray) -> np.ndarray:
+    """Convert a model's output into the target's own units.
+
+    A no-op for a raw-scale model. For a log-fitted one this undoes
+    log10(y + c) and applies Duan's smearing factor — without it the
+    back-transform is biased low, because E[y] is not 10 ** E[log10 y].
+    Clipped at zero: every log-fitted target here is a concentration.
+    """
+    params = MODEL_TRANSFORMS.get((target, model_type))
+    if params is None:
+        return y_pred
+    offset, smearing = params
+    return np.clip((10.0 ** y_pred) * smearing - offset, 0.0, None)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -535,8 +638,9 @@ def predict_at_stations(target: str, model_type: str, pred_date: date) -> pd.Dat
     X   = build_feature_matrix(pred_date)
     mdl = MODELS[target][model_type]       # already-fitted pipeline from pkl
 
+    raw = mdl.predict(X.to_numpy())        # inference only — no fit() call
     result = STATIONS.copy()
-    result["predicted"] = mdl.predict(X.to_numpy())  # inference only — no fit() call
+    result["predicted"] = _to_raw_scale(target, model_type, raw)
     return result
 
 
@@ -797,18 +901,39 @@ def _performance_panel(target: Optional[str], model_type: Optional[str]) -> html
     rows = [
         html.Div("How accurate is it?", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginBottom": "12px"}),
         _info_row("Model score (R²)", _fmt_metric(r2_val)),
-        _info_row("Avg error (RMSE)", f"{rmse:.2f} {unit}"),
     ]
+
+    # For a log-fitted target the raw-scale R² above is dominated by the same
+    # extreme tail the log transform exists to de-emphasise, so it understates
+    # the model on its own. Show the score on the scale it was fitted and is
+    # read on — for E. coli that is also the scale the EPA criterion uses.
+    r2_log = metric_row.get("r2_log")
+    is_log_fitted = r2_log is not None and not pd.isna(r2_log)
+    if is_log_fitted:
+        rows.append(_info_row("Model score (R², log scale)", _fmt_metric(float(r2_log))))
+
+    rows.append(_info_row("Avg error (RMSE)", f"{rmse:.2f} {unit}"))
     if error_rate is not None and not pd.isna(error_rate):
         rows.append(_info_row("Typical error rate", f"{float(error_rate):.0f}%"))
 
     # The memorization bar: "repeat this station's previous value" scored on the
     # same held-out rows. A model that does not clear it is recalling the site
     # rather than predicting the water.
-    persistence = metric_row.get("persistence_r2")
-    margin      = metric_row.get("model_minus_persistence")
+    #
+    # For a log-fitted target, compare on the log scale. On raw units these
+    # targets' extreme tails make persistence catastrophically bad (R² down to
+    # −0.99, worse than predicting the mean), so a raw-scale margin of +1.10
+    # flatters the model rather than testing it.
+    if is_log_fitted:
+        persistence = metric_row.get("persistence_r2_log")
+        margin      = metric_row.get("model_minus_persistence_log")
+        baseline_label = "Repeat-last-value baseline (R², log scale)"
+    else:
+        persistence = metric_row.get("persistence_r2")
+        margin      = metric_row.get("model_minus_persistence")
+        baseline_label = "Repeat-last-value baseline (R²)"
     if persistence is not None and not pd.isna(persistence):
-        rows.append(_info_row("Repeat-last-value baseline (R²)", _fmt_metric(float(persistence))))
+        rows.append(_info_row(baseline_label, _fmt_metric(float(persistence))))
     if margin is not None and not pd.isna(margin):
         margin = float(margin)
         rows.append(_info_row(
@@ -819,8 +944,14 @@ def _performance_panel(target: Optional[str], model_type: Optional[str]) -> html
 
     stations = metric_row.get("test_stations")
     if stations is not None and not pd.isna(stations):
+        note = (f"Scored on {int(stations):,} monitoring stations the model "
+                "never saw during training.")
+        if is_log_fitted:
+            note += (" This target is right-skewed enough that this model is fitted on "
+                     "log10 — read the log-scale score; the raw-scale one is set by "
+                     "a handful of extreme readings.")
         rows.append(html.Div(
-            f"Scored on {int(stations):,} monitoring stations the model never saw during training.",
+            note,
             style={"fontSize": "10px", "color": TEXT_LIGHT, "lineHeight": "1.5", "marginTop": "10px"},
         ))
 
@@ -906,7 +1037,7 @@ def _statewide_mean_prediction(target: str, model_type: str, day_of_year: int, y
     """Cache statewide mean predictions for streak rendering."""
     X = _build_feature_matrix_for_doy(day_of_year, year)
     preds = MODELS[target][model_type].predict(X.to_numpy())
-    return float(np.mean(preds))
+    return float(np.mean(_to_raw_scale(target, model_type, preds)))
 
 
 def _streak_level(value: float, low: float, high: float) -> int:

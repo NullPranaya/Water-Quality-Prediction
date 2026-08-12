@@ -1483,8 +1483,9 @@ dropping the membership keys S2 shares with S1 (`county_fips`, `huc12_code`,
 record, its static station geography and soil, and every annual
 watershed/county/state contextual variable, in one CSV. It supersedes the
 dashboard's former input, `data/tabular/merged/epa-climate-merged.csv`;
-`app.py` reads it directly, with its own `FEATURE_COLS` contract (30 columns —
-see `CLAUDE.md`).
+`app.py` reads it directly, with its own `FEATURE_COLS` contract (29 columns —
+`pct_row_crops` is in the table but excluded from the models as an exact sum of
+`pct_corn + pct_soybean`; see `CLAUDE.md`).
 
 **Post-merge enrichment.** `src/04_eda/wqi-calculation.ipynb` appends 3 more
 columns in place (315 → 318), after the three read-only EDA notebooks in the
