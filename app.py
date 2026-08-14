@@ -1190,6 +1190,7 @@ app = dash.Dash(
     title="Water Quality Predictor",
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
+server = app.server
 
 TODAY = date.today()
 DATE_SHORTCUTS = [
