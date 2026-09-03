@@ -30,3 +30,5 @@ jupyterlab==3.2.4
 scikit_learn==1.8.0
 joblib==1.5.3
 threadpoolctl==3.6.0
+gunicorn==23.0.0
+

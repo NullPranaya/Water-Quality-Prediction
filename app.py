@@ -5,23 +5,28 @@ Dash/Plotly app for predicting water quality across Iowa monitoring
 stations using pre-trained scikit-learn models loaded from disk.
 
 Expected files on the server (set paths in CONFIGURATION below):
-  DATA_FILE_PATH          – epa-climate-merged.csv
-  MODEL_DIR               – folder containing one .pkl per model/target:
-                              lr_water_temperature.pkl
-                              rf_water_temperature.pkl
-                              gb_water_temperature.pkl
-                              lr_ph.pkl
-                              rf_ph.pkl
-                              gb_ph.pkl
-                              lr_dissolved_oxygen.pkl
-                              rf_dissolved_oxygen.pkl
-                              gb_dissolved_oxygen.pkl
-                              lr_nitrate.pkl
-                              rf_nitrate.pkl
-                              gb_nitrate.pkl
+  DATA_FILE_PATH          – data/03c_merge_tertiary/epa-full.csv
+  MODEL_DIR               – src/05_modeling/, with one sub-folder per model
+                            family, each holding one .pkl per target:
+                              linear_regression/lr_<target>.pkl
+                              random_forest/rf_<target>.pkl
+                              gradient_boosting/gb_<target>.pkl
+                            e.g. random_forest/rf_specific_conductance.pkl
 
-Each .pkl must be a scikit-learn Pipeline (or any object with .predict())
-whose feature order matches FEATURE_COLS exactly.
+Thirteen targets are supported (water temperature, dissolved oxygen, pH,
+nitrate, nitrite, nitrate + nitrite, total phosphorus, specific conductance,
+total dissolved solids, total suspended solids, turbidity, E. coli, and the
+composite WQI), each in three model flavours — 39 pkl files in total.
+
+Each .pkl holds a dict: {"pipeline", "target_transform", "log_offset",
+"smearing_factor", "feature_cols"}. The pipeline's feature order must match
+FEATURE_COLS exactly — it is checked at load time. The pipelines impute
+missing predictors internally, so the app may pass NaNs straight through.
+
+Some models were fitted on log10(y + c) and predict on that scale rather than
+in the target's own units. Which ones is decided per (target, family) by a
+cross-validated bake-off in the training notebooks, not by target name, so it
+travels inside the .pkl; _to_raw_scale applies the inverse.
 
 If a model file is missing the app still starts — that target/model
 combination is simply disabled in the UI.
@@ -29,11 +34,12 @@ combination is simply disabled in the UI.
 
 import os
 import pickle
+import re
 import warnings
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -50,66 +56,117 @@ warnings.filterwarnings("ignore")
 # CONFIGURATION  ← edit these paths to match your server layout
 # ─────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
-DATA_FILE_PATH = BASE_DIR / "data/tabular/merged/epa-climate-merged.csv"
-MODEL_DIR = BASE_DIR / "src/modeling"           # folder containing the .pkl files
-METRICS_PATH = BASE_DIR / "data/tabular/modeling/sklearn_model_metrics.csv"
+DATA_FILE_PATH = BASE_DIR / "data/03c_merge_tertiary/epa-full.csv"
+MODEL_DIR = BASE_DIR / "src/05_modeling"        # folder containing the model sub-folders
+METRICS_PATH = BASE_DIR / "src/05_modeling/model_metrics.csv"
 
 # Column names in the CSV
 DATE_COL = "ActivityStartDateTime"
 LAT_COL  = "LatitudeMeasure"
 LON_COL  = "LongitudeMeasure"
 
-# Columns the models were trained on — ORDER MUST MATCH TRAINING
-FEATURE_COLS = [
-    "doy",
-    "gdd_40_86",
-    "high",
-    "highc",
-    "low",
-    "lowc",
-    "precip",
-    "snow",
-    "snowd",
-    "distance_to_climate_station_km",
-    "LatitudeMeasure",
-    "LongitudeMeasure",
+# Station-level predictors read straight from the CSV. These are the same
+# 26 base features the notebooks in src/05_modeling/ trained on.
+BASE_FEATURE_COLS = [
+    # Location
+    "LatitudeMeasure", "LongitudeMeasure",
+    "distance_to_climate_station_km", "distance_to_streamflow_gauge_km",
+    # PRISM climate normals at the observation
+    "prism_tmax_c", "prism_tmin_c", "prism_ppt_mm", "prism_tdmean_c",
+    # ISU station weather
+    "isu_avg_wind_speed_kts", "isu_avg_rh", "isu_snow_in", "isu_snowd_in",
+    "isu_max_feel_c", "isu_min_feel_c",
+    # Hydrology
+    "streamflow_discharge_cfs",
+    # Soil
+    "ksat_mean", "awc_mean",
+    # Land cover. `pct_row_crops` is deliberately absent: it equals
+    # pct_corn + pct_soybean exactly on every row, so including it made the
+    # design matrix singular without adding a fact (eda-summary.md §4.1).
+    "pct_corn", "pct_soybean", "pct_developed", "pct_forest",
+    # Nutrient loading context
+    "npfert__n__total_kg", "npfert__p__total_kg",
+    "npmanure__total__n_kg", "npmanure__total__p_kg",
 ]
+
+# Temporal predictors derived from the chosen prediction date at inference time.
+TEMPORAL_FEATURE_COLS = ["doy", "doy_sin", "doy_cos", "obs_year"]
+
+# Columns the models were trained on — ORDER MUST MATCH TRAINING.
+FEATURE_COLS = BASE_FEATURE_COLS + TEMPORAL_FEATURE_COLS
 
 # Target variable display name → CSV column name
 TARGET_COLS = {
-    "Water Temperature": "Temperature, water_value",
-    "pH":                "pH_value",
-    "Dissolved Oxygen":  "Dissolved oxygen (DO)_value",
-    "Nitrate":           "Nitrate_value",
+    "Water Temperature":      "Temperature, water_value",
+    "Dissolved Oxygen":       "Dissolved oxygen (DO)_value",
+    "pH":                     "pH_value",
+    "Nitrate":                "Nitrate_value",
+    "Nitrite":                "Nitrite_value",
+    "Nitrate + Nitrite":      "Nitrate + Nitrite_value",
+    "Total Phosphorus":       "Total Phosphorus, mixed forms_value",
+    "Specific Conductance":   "Specific conductance_value",
+    "Total Dissolved Solids": "Total dissolved solids_value",
+    "Total Suspended Solids": "Total suspended solids_value",
+    "Turbidity":              "Turbidity_value",
+    "E. coli":                "Escherichia coli_value",
+    # Composite index from src/04_eda/wqi-calculation.ipynb — 0 = best,
+    # 100 = worst. Present on 56.6% of rows (943 stations).
+    "WQI":                    "WQI",
 }
 
-# Model type display name → filename prefix
+# Model type display name → (filename prefix, sub-folder under MODEL_DIR)
 MODEL_PREFIXES = {
     "Gradient Boosting": "gb",
-    "Random Forest": "rf",
+    "Random Forest":     "rf",
     "Linear Regression": "lr",
 }
-
-# Target display name → safe filename stem (used to build .pkl paths)
-TARGET_STEMS = {
-    "Water Temperature": "water_temperature",
-    "pH":                "ph",
-    "Dissolved Oxygen":  "dissolved_oxygen",
-    "Nitrate":           "nitrate",
+MODEL_SUBDIRS = {
+    "Gradient Boosting": "gradient_boosting",
+    "Random Forest":     "random_forest",
+    "Linear Regression": "linear_regression",
 }
 
+
+def _stem(label: str) -> str:
+    """'Nitrate + Nitrite' → 'nitrate_nitrite', 'E. coli' → 'e_coli' — matches the notebooks."""
+    return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+
+
+# Target display name → safe filename stem (used to build .pkl paths)
+TARGET_STEMS = {label: _stem(label) for label in TARGET_COLS}
+
 TARGET_UNITS = {
-    "Water Temperature": "°C",
-    "pH":                "pH",
-    "Dissolved Oxygen":  "mg/L",
-    "Nitrate":           "mg/L",
+    "Water Temperature":      "°C",
+    "Dissolved Oxygen":       "mg/L",
+    "pH":                     "pH",
+    "Nitrate":                "mg/L as N",
+    "Nitrite":                "mg/L as N",
+    "Nitrate + Nitrite":      "mg/L as N",
+    "Total Phosphorus":       "mg/L as P",
+    "Specific Conductance":   "µS/cm",
+    "Total Dissolved Solids": "mg/L",
+    "Total Suspended Solids": "mg/L",
+    "Turbidity":              "NTU",
+    "E. coli":                "MPN/100mL",
+    "WQI":                    "index",
 }
 
 TARGET_COLORSCALES = {
-    "Water Temperature": "RdYlBu_r",
-    "pH":                "RdYlGn",
-    "Dissolved Oxygen":  "Blues",
-    "Nitrate":           "YlOrRd",
+    "Water Temperature":      "RdYlBu_r",
+    "Dissolved Oxygen":       "Blues",
+    "pH":                     "RdYlGn",
+    "Nitrate":                "YlOrRd",
+    "Nitrite":                "YlOrRd",
+    "Nitrate + Nitrite":      "YlOrRd",
+    "Total Phosphorus":       "PuRd",
+    "Specific Conductance":   "Viridis",
+    "Total Dissolved Solids": "Cividis",
+    "Total Suspended Solids": "YlOrBr",
+    "Turbidity":              "YlOrBr",
+    "E. coli":                "Reds",
+    # WQI runs 0 = best to 100 = worst, so the ramp must NOT be reversed:
+    # green at the low end, red at the high end.
+    "WQI":                    "RdYlGn_r",
 }
 
 MODEL_DESCRIPTIONS = {
@@ -123,6 +180,15 @@ TARGET_SHORT_NOTES = {
     "pH": "Use this to compare acidity and alkalinity patterns across Iowa waterways.",
     "Dissolved Oxygen": "Use this to spot areas where oxygen availability may be stronger or weaker.",
     "Nitrate": "Use this to inspect likely nutrient concentration hotspots across the network.",
+    "Nitrite": "Use this to inspect nitrite levels, an intermediate nitrogen form, across the network.",
+    "Nitrate + Nitrite": "Use this to inspect combined oxidized-nitrogen loading across the network.",
+    "Total Phosphorus": "Use this to spot phosphorus enrichment that can drive algal growth.",
+    "Specific Conductance": "Use this as a proxy for dissolved-ion content across waterways.",
+    "Total Dissolved Solids": "Use this to compare overall dissolved mineral content.",
+    "Total Suspended Solids": "Use this to inspect sediment and particulate load patterns.",
+    "Turbidity": "Use this to compare water clarity across the network.",
+    "E. coli": "Use this to inspect likely bacterial-contamination hotspots.",
+    "WQI": "Use this as a single roll-up of overall degradation — 0 is best, 100 is worst.",
 }
 
 
@@ -235,6 +301,75 @@ def _target_assessment(target: Optional[str], value: Optional[Union[float, int]]
             "color": DANGER,
         }
 
+    # ── Additional targets ────────────────────────────────────────
+    # Simple, band-based guidance drawn from commonly cited freshwater and
+    # drinking/recreational-water reference points. UI guidance only.
+    if target in ("Nitrite", "Nitrate + Nitrite"):
+        # Drinking-water MCL: nitrite 1 mg/L-N, nitrate+nitrite 10 mg/L-N.
+        hi = 1.0 if target == "Nitrite" else 10.0
+        if val < 0.3 * hi:
+            return {"label": "Low", "detail": "Low oxidized-nitrogen concentration.", "color": SUCCESS}
+        if val < hi:
+            return {"label": "Elevated", "detail": "Detectable nitrogen loading, below the drinking-water limit.", "color": "#d97706"}
+        return {"label": "High Concern", "detail": "Above the drinking-water reference limit.", "color": DANGER}
+
+    if target == "Total Phosphorus":
+        if val < 0.05:
+            return {"label": "Low", "detail": "Below common stream targets; limited algal-growth risk.", "color": SUCCESS}
+        if val < 0.1:
+            return {"label": "Moderate", "detail": "Near typical stream targets (~0.075 mg/L).", "color": "#65a30d"}
+        if val < 0.3:
+            return {"label": "Elevated", "detail": "Phosphorus enrichment that can promote algal growth.", "color": "#d97706"}
+        return {"label": "High Concern", "detail": "Strongly enriched; elevated eutrophication risk.", "color": DANGER}
+
+    if target == "Specific Conductance":
+        if val < 500:
+            return {"label": "Low", "detail": "Low dissolved-ion content.", "color": SUCCESS}
+        if val < 1500:
+            return {"label": "Moderate", "detail": "Typical range for many Midwestern streams.", "color": "#65a30d"}
+        return {"label": "Elevated", "detail": "High ionic content, often reflecting runoff or discharge.", "color": "#d97706"}
+
+    if target == "Total Dissolved Solids":
+        if val < 500:
+            return {"label": "Good", "detail": "Within the secondary drinking-water guideline (500 mg/L).", "color": SUCCESS}
+        if val < 1000:
+            return {"label": "Moderate", "detail": "Above the aesthetic guideline but common in surface water.", "color": "#d97706"}
+        return {"label": "Elevated", "detail": "High dissolved-solids content.", "color": DANGER}
+
+    if target == "Total Suspended Solids":
+        if val < 25:
+            return {"label": "Clear", "detail": "Low suspended-sediment load.", "color": SUCCESS}
+        if val < 80:
+            return {"label": "Moderate", "detail": "Noticeable sediment load.", "color": "#d97706"}
+        return {"label": "Turbid", "detail": "High sediment load that can stress aquatic habitat.", "color": DANGER}
+
+    if target == "Turbidity":
+        if val < 5:
+            return {"label": "Clear", "detail": "Clear water with low particulate scattering.", "color": SUCCESS}
+        if val < 25:
+            return {"label": "Moderate", "detail": "Some cloudiness from suspended particles.", "color": "#d97706"}
+        return {"label": "Very Turbid", "detail": "Cloudy water, often after runoff or disturbance.", "color": DANGER}
+
+    if target == "E. coli":
+        # EPA recreational water: ~126 MPN/100mL geomean, ~235 single-sample.
+        if val < 126:
+            return {"label": "Low", "detail": "Below the recreational-water geomean reference (126 MPN/100mL).", "color": SUCCESS}
+        if val < 235:
+            return {"label": "Elevated", "detail": "Between the geomean and single-sample recreational thresholds.", "color": "#d97706"}
+        return {"label": "High Concern", "detail": "Above the single-sample recreational threshold (235 MPN/100mL).", "color": DANGER}
+
+    if target == "WQI":
+        # Note the direction: this index runs 0 = best to 100 = worst, the
+        # opposite of most "quality score" scales. Bands follow the quartiles of
+        # the observed distribution (median 43.3, IQR 31.5-57.5) rather than any
+        # published standard — this index is defined in
+        # src/04_eda/wqi-calculation.ipynb, not by a regulator.
+        if val < 31.5:
+            return {"label": "Least Degraded", "detail": "In the cleanest quarter of observed samples (index below 31.5).", "color": SUCCESS}
+        if val < 57.5:
+            return {"label": "Typical", "detail": "Within the middle half of observed samples (index 31.5-57.5).", "color": "#d97706"}
+        return {"label": "Most Degraded", "detail": "In the most degraded quarter of observed samples (index above 57.5).", "color": DANGER}
+
     return {
         "label": "Measured",
         "detail": "Predicted value available.",
@@ -308,29 +443,73 @@ def _nearest_station_name(lat: float, lon: float) -> str:
 #   • FEATURE_COLS order is contractual: the pkl was trained with this
 #     exact column order, so we must replicate it faithfully at inference
 # ─────────────────────────────────────────────────────────────
-def load_models() -> dict:
+def load_models() -> tuple:
     """
-    Walk MODEL_DIR looking for files named {prefix}_{stem}.pkl.
-    Returns nested dict: models[target_label][model_type] = loaded pipeline.
+    Walk MODEL_DIR/<family>/ looking for files named {prefix}_{stem}.pkl.
+
+    Each .pkl holds a dict written by the training notebooks:
+
+        {"pipeline": Pipeline, "target_transform": "none" | "log10",
+         "log_offset": float | None, "smearing_factor": float,
+         "feature_cols": [...]}
+
+    Whether a model was fitted on the raw target or on log10(y + c) is decided
+    per (target, family) by a cross-validated bake-off in the notebooks, so it
+    cannot be inferred from the target name — it travels inside the artifact
+    instead, which is what stops a log10 prediction from ever being rendered as
+    mg/L because a metrics file went stale.
+
+    Returns (models, transforms):
+      models[target][family]     -> the fitted pipeline
+      transforms[(target, family)] -> (offset, smearing) or None if raw-scale
+
     Missing files are skipped with a warning; the app still starts.
     """
     models = {target: {} for target in TARGET_COLS}
-    model_dir = MODEL_DIR
+    transforms: Dict[tuple, Optional[Tuple[float, float]]] = {}
 
     for target_label, stem in TARGET_STEMS.items():
         for model_label, prefix in MODEL_PREFIXES.items():
-            pkl_path = model_dir / f"{prefix}_{stem}.pkl"
+            pkl_path = MODEL_DIR / MODEL_SUBDIRS[model_label] / f"{prefix}_{stem}.pkl"
             if not pkl_path.exists():
                 print(f"[WARNING] Model not found: {pkl_path} — "
                       f"'{target_label} / {model_label}' will be unavailable.")
                 continue
+
             with open(pkl_path, "rb") as f:
-                models[target_label][model_label] = pickle.load(f)
+                artifact = pickle.load(f)
+
+            # Pre-transform pkl files held a bare Pipeline. Those were always
+            # raw-scale, so treating them as such stays correct.
+            if not isinstance(artifact, dict):
+                models[target_label][model_label] = artifact
+                transforms[(target_label, model_label)] = None
+                print(f"[INFO] Loaded model (legacy bare pipeline): {pkl_path}")
+                continue
+
+            saved_cols = artifact.get("feature_cols")
+            if saved_cols is not None and list(saved_cols) != FEATURE_COLS:
+                print(f"[WARNING] {pkl_path} was trained on a different feature "
+                      f"set ({len(saved_cols)} cols) than app.py expects "
+                      f"({len(FEATURE_COLS)}) — '{target_label} / {model_label}' "
+                      "disabled to avoid silently mismatched predictions.")
+                continue
+
+            models[target_label][model_label] = artifact["pipeline"]
+            if artifact.get("target_transform") == "log10":
+                transforms[(target_label, model_label)] = (
+                    float(artifact["log_offset"]),
+                    float(artifact["smearing_factor"]),
+                )
+            else:
+                transforms[(target_label, model_label)] = None
             print(f"[INFO] Loaded model: {pkl_path}")
 
     loaded = sum(len(v) for v in models.values())
-    print(f"[INFO] {loaded} model(s) loaded from '{MODEL_DIR}/'")
-    return models
+    n_log = sum(1 for v in transforms.values() if v is not None)
+    print(f"[INFO] {loaded} model(s) loaded from '{MODEL_DIR}/' "
+          f"({n_log} fitted on log10(y + c))")
+    return models, transforms
 
 
 def load_model_metrics() -> pd.DataFrame:
@@ -370,9 +549,40 @@ def load_station_data() -> pd.DataFrame:
     return stations
 
 
-MODELS = load_models()
+MODELS, MODEL_TRANSFORMS = load_models()
 STATIONS = load_station_data()
 MODEL_METRICS = load_model_metrics()
+
+
+# ─────────────────────────────────────────────────────────────
+# TARGET BACK-TRANSFORM
+# Some models were fitted on log10(y + c) and so predict on that
+# scale. Which ones is not a property of the target — the
+# notebooks choose per (target, family) via a cross-validated
+# bake-off, and e.g. total phosphorus takes the log for the two
+# tree families but not for linear regression.
+#
+# The parameters ride inside the .pkl, so this cannot fall out
+# of sync with a stale model_metrics.csv. The inverse itself
+# lives here rather than in the pickle because baking it in
+# would need a custom estimator class importable at unpickle
+# time — the fragility that got model_feature_engineering.py
+# deleted. A dict of a Pipeline and two floats needs no such
+# class.
+# ─────────────────────────────────────────────────────────────
+def _to_raw_scale(target: str, model_type: str, y_pred: np.ndarray) -> np.ndarray:
+    """Convert a model's output into the target's own units.
+
+    A no-op for a raw-scale model. For a log-fitted one this undoes
+    log10(y + c) and applies Duan's smearing factor — without it the
+    back-transform is biased low, because E[y] is not 10 ** E[log10 y].
+    Clipped at zero: every log-fitted target here is a concentration.
+    """
+    params = MODEL_TRANSFORMS.get((target, model_type))
+    if params is None:
+        return y_pred
+    offset, smearing = params
+    return np.clip((10.0 ** y_pred) * smearing - offset, 0.0, None)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -381,27 +591,40 @@ MODEL_METRICS = load_model_metrics()
 # The only NEW input here is the user-chosen prediction date;
 # all other features come from the station's most-recent record.
 # ─────────────────────────────────────────────────────────────
+def _add_temporal_features(base: pd.DataFrame, day_of_year: int, year: int) -> pd.DataFrame:
+    """
+    Append the four date-derived predictors to a base feature frame and return
+    the columns in the exact FEATURE_COLS training order.
+
+    The cyclical doy_sin/doy_cos encoding mirrors the notebooks so that day 365
+    sits next to day 1. NaNs in the base columns are left in place — every
+    fitted pipeline imputes them internally with the training-set medians.
+    """
+    X = base.copy()
+    X["doy"] = day_of_year
+    radians = 2.0 * np.pi * day_of_year / 365.25
+    X["doy_sin"] = np.sin(radians)
+    X["doy_cos"] = np.cos(radians)
+    X["obs_year"] = year
+    return X[FEATURE_COLS]   # enforce column order contract
+
+
 def build_feature_matrix(pred_date: date) -> pd.DataFrame:
     """
     Construct the inference feature matrix for every station.
 
     For a future prediction date we know:
-      doy  — derived directly from pred_date
-      All climate columns — taken from the station's historical record
-        (best available proxy when forecasted climate data is not provided)
+      doy / doy_sin / doy_cos / obs_year — derived directly from pred_date
+      All station/climate/soil/land-cover columns — taken from the station's
+        historical record (best available proxy when a forecast is not provided)
 
-    Returns a DataFrame with columns in FEATURE_COLS order, one row
-    per station, with NaNs imputed to column medians.
+    Returns a DataFrame with columns in FEATURE_COLS order, one row per station.
     """
-    X = STATIONS[FEATURE_COLS].copy()
-
-    # Override doy with the target prediction date
-    # (day-of-year encodes seasonality — the model's strongest temporal signal)
-    X["doy"] = pred_date.timetuple().tm_yday
-
-    # Impute any remaining NaNs with column medians
-    # (same strategy used during training to avoid data leakage issues)
-    return _impute_feature_matrix(X)
+    return _add_temporal_features(
+        STATIONS[BASE_FEATURE_COLS],
+        pred_date.timetuple().tm_yday,
+        pred_date.year,
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -415,8 +638,9 @@ def predict_at_stations(target: str, model_type: str, pred_date: date) -> pd.Dat
     X   = build_feature_matrix(pred_date)
     mdl = MODELS[target][model_type]       # already-fitted pipeline from pkl
 
+    raw = mdl.predict(X.to_numpy())        # inference only — no fit() call
     result = STATIONS.copy()
-    result["predicted"] = mdl.predict(X.to_numpy())  # inference only — no fit() call
+    result["predicted"] = _to_raw_scale(target, model_type, raw)
     return result
 
 
@@ -629,12 +853,12 @@ def _stat_tile(label: str, value: str) -> html.Div:
     )
 
 
-def _info_row(label: str, value: str) -> html.Div:
+def _info_row(label: str, value: str, value_color: str = TEXT_DARK) -> html.Div:
     return html.Div(
         style={"display": "flex", "justifyContent": "space-between", "gap": "8px", "padding": "4px 0"},
         children=[
             html.Span(label, style={"fontSize": "12px", "color": TEXT_LIGHT}),
-            html.Span(value, style={"fontSize": "12px", "color": TEXT_DARK, "fontWeight": "500", "textAlign": "right"}),
+            html.Span(value, style={"fontSize": "12px", "color": value_color, "fontWeight": "500", "textAlign": "right"}),
         ],
     )
 
@@ -645,27 +869,8 @@ def _fmt_metric(value: Optional[Union[float, int]], suffix: str = "", digits: in
     return f"{value:.{digits}f}{suffix}"
 
 
-def _boost_display_score(target: Optional[str], value: Optional[Union[float, int]]) -> Optional[float]:
-    """
-    Apply a modest target-specific UI-only uplift for harder targets
-    without changing saved metrics or model behavior.
-    """
-    if value is None or pd.isna(value):
-        return None
-
-    clipped = float(np.clip(float(value), 0.0, 1.0))
-
-    if target == "pH":
-        return min(0.70, clipped + 0.26)
-    if target == "Nitrate":
-        return min(0.55, clipped + 0.12)
-    return clipped
-
-
 def _get_metric_row(target: Optional[str], model_type: Optional[str]) -> Optional[pd.Series]:
     if not target or not model_type or MODEL_METRICS.empty:
-        return None
-    if not {"target", "model"}.issubset(MODEL_METRICS.columns):
         return None
 
     match = MODEL_METRICS[
@@ -688,19 +893,69 @@ def _performance_panel(target: Optional[str], model_type: Optional[str]) -> html
             ],
         )
 
-    r2_val = float(metric_row.get("r2")  or 0)
-    rmse   = float(metric_row.get("rmse") or 0)
-    unit   = TARGET_UNITS.get(target, "")
-    display_score = _boost_display_score(target, r2_val)
+    r2_val     = float(metric_row.get("r2")   or 0)
+    rmse       = float(metric_row.get("rmse") or 0)
+    error_rate = metric_row.get("error_rate")
+    unit       = TARGET_UNITS.get(target, "")
 
-    return html.Div(
-        style=SIDECARD_STYLE,
-        children=[
-            html.Div("How accurate is it?", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginBottom": "12px"}),
-            _info_row("Model score", _fmt_metric(display_score)),
-            _info_row("Avg error (RMSE)", f"{rmse:.2f} {unit}"),
-        ],
-    )
+    rows = [
+        html.Div("How accurate is it?", style={"fontSize": "11px", "color": TEXT_LIGHT, "marginBottom": "12px"}),
+        _info_row("Model score (R²)", _fmt_metric(r2_val)),
+    ]
+
+    # For a log-fitted target the raw-scale R² above is dominated by the same
+    # extreme tail the log transform exists to de-emphasise, so it understates
+    # the model on its own. Show the score on the scale it was fitted and is
+    # read on — for E. coli that is also the scale the EPA criterion uses.
+    r2_log = metric_row.get("r2_log")
+    is_log_fitted = r2_log is not None and not pd.isna(r2_log)
+    if is_log_fitted:
+        rows.append(_info_row("Model score (R², log scale)", _fmt_metric(float(r2_log))))
+
+    rows.append(_info_row("Avg error (RMSE)", f"{rmse:.2f} {unit}"))
+    if error_rate is not None and not pd.isna(error_rate):
+        rows.append(_info_row("Typical error rate", f"{float(error_rate):.0f}%"))
+
+    # The memorization bar: "repeat this station's previous value" scored on the
+    # same held-out rows. A model that does not clear it is recalling the site
+    # rather than predicting the water.
+    #
+    # For a log-fitted target, compare on the log scale. On raw units these
+    # targets' extreme tails make persistence catastrophically bad (R² down to
+    # −0.99, worse than predicting the mean), so a raw-scale margin of +1.10
+    # flatters the model rather than testing it.
+    if is_log_fitted:
+        persistence = metric_row.get("persistence_r2_log")
+        margin      = metric_row.get("model_minus_persistence_log")
+        baseline_label = "Repeat-last-value baseline (R², log scale)"
+    else:
+        persistence = metric_row.get("persistence_r2")
+        margin      = metric_row.get("model_minus_persistence")
+        baseline_label = "Repeat-last-value baseline (R²)"
+    if persistence is not None and not pd.isna(persistence):
+        rows.append(_info_row(baseline_label, _fmt_metric(float(persistence))))
+    if margin is not None and not pd.isna(margin):
+        margin = float(margin)
+        rows.append(_info_row(
+            "Beats the baseline by",
+            f"{'+' if margin >= 0 else '−'}{abs(margin):.3f} R²",
+            SUCCESS if margin >= 0 else DANGER,
+        ))
+
+    stations = metric_row.get("test_stations")
+    if stations is not None and not pd.isna(stations):
+        note = (f"Scored on {int(stations):,} monitoring stations the model "
+                "never saw during training.")
+        if is_log_fitted:
+            note += (" This target is right-skewed enough that this model is fitted on "
+                     "log10 — read the log-scale score; the raw-scale one is set by "
+                     "a handful of extreme readings.")
+        rows.append(html.Div(
+            note,
+            style={"fontSize": "10px", "color": TEXT_LIGHT, "lineHeight": "1.5", "marginTop": "10px"},
+        ))
+
+    return html.Div(style=SIDECARD_STYLE, children=rows)
 
 
 def _hover_panel_default() -> html.Div:
@@ -769,45 +1024,20 @@ def _available_model_types(target) -> list:
     return options
 
 
-def _parse_prediction_date(selected_date: Optional[str]) -> tuple[Optional[date], Optional[str]]:
-    """Return a parsed prediction date and a user-facing validation error."""
-    if not selected_date:
-        return None, "a prediction date"
-
-    try:
-        return date.fromisoformat(selected_date), None
-    except (TypeError, ValueError):
-        return None, "a valid prediction date"
-
-
-def _impute_feature_matrix(X: pd.DataFrame) -> pd.DataFrame:
-    """Fill missing inference features with medians and use zero if a column is all missing."""
-    for col in FEATURE_COLS:
-        if X[col].isna().any():
-            median = X[col].median()
-            fill_value = 0.0 if pd.isna(median) else median
-            X[col] = X[col].fillna(fill_value)
-
-    return X[FEATURE_COLS]
-
-
-def _build_feature_matrix_for_day_of_year(day_of_year: int) -> pd.DataFrame:
+def _build_feature_matrix_for_doy(day_of_year: int, year: int) -> pd.DataFrame:
     """
-    Construct the inference matrix for a specific day-of-year.
-    Only the seasonal signal changes; station-level features stay fixed.
+    Construct the inference matrix for a specific day-of-year and year.
+    Only the temporal signal changes; station-level features stay fixed.
     """
-    X = STATIONS[FEATURE_COLS].copy()
-    X["doy"] = day_of_year
-
-    return _impute_feature_matrix(X)
+    return _add_temporal_features(STATIONS[BASE_FEATURE_COLS], day_of_year, year)
 
 
-@lru_cache(maxsize=2048)
-def _statewide_mean_prediction(target: str, model_type: str, day_of_year: int) -> float:
+@lru_cache(maxsize=4096)
+def _statewide_mean_prediction(target: str, model_type: str, day_of_year: int, year: int) -> float:
     """Cache statewide mean predictions for streak rendering."""
-    X = _build_feature_matrix_for_day_of_year(day_of_year)
+    X = _build_feature_matrix_for_doy(day_of_year, year)
     preds = MODELS[target][model_type].predict(X.to_numpy())
-    return float(np.mean(preds))
+    return float(np.mean(_to_raw_scale(target, model_type, preds)))
 
 
 def _streak_level(value: float, low: float, high: float) -> int:
@@ -835,7 +1065,7 @@ def _streak_panel(target: str, model_type: str, pred_date: date) -> html.Div:
     all_dates = [grid_start + timedelta(days=offset) for offset in range(STREAK_WEEKS * 7)]
     historic_dates = [d for d in all_dates if d <= pred_date]
     values = [
-        _statewide_mean_prediction(target, model_type, d.timetuple().tm_yday)
+        _statewide_mean_prediction(target, model_type, d.timetuple().tm_yday, d.year)
         for d in historic_dates
     ]
 
@@ -866,7 +1096,7 @@ def _streak_panel(target: str, model_type: str, pred_date: date) -> html.Div:
                 border = "1px solid rgba(15, 23, 42, 0.05)"
                 title = f"{cell_date.strftime('%b %d, %Y')}: upcoming"
             else:
-                value = _statewide_mean_prediction(target, model_type, cell_date.timetuple().tm_yday)
+                value = _statewide_mean_prediction(target, model_type, cell_date.timetuple().tm_yday, cell_date.year)
                 level = _streak_level(value, window_low, window_high)
                 background = STREAK_LEVELS[level]
                 border = "1px solid rgba(15, 23, 42, 0.06)"
@@ -960,6 +1190,7 @@ app = dash.Dash(
     title="Water Quality Predictor",
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
+server = app.server
 
 TODAY = date.today()
 DATE_SHORTCUTS = [
@@ -1252,9 +1483,8 @@ def run_prediction(n_clicks, target, model_type, selected_date):
     errors = []
     if not target:
         errors.append("a target variable")
-    pred_date, date_error = _parse_prediction_date(selected_date)
-    if date_error:
-        errors.append(date_error)
+    if not selected_date:
+        errors.append("a prediction date")
     if target and not MODELS.get(target, {}).get(model_type):
         errors.append(f"a loaded model for '{target} / {model_type}'")
 
@@ -1274,6 +1504,7 @@ def run_prediction(n_clicks, target, model_type, selected_date):
         )
 
     # ── Predict ──────────────────────────────────────
+    pred_date  = date.fromisoformat(selected_date)
     station_df = predict_at_stations(target, model_type, pred_date)
 
     # ── Interpolate to grid ──────────────────────────
