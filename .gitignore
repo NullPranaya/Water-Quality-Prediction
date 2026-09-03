@@ -6,17 +6,4 @@ src/**/__pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 .DS_Store
-
-# Data
-data/
-
-# Claude files
-CLAUDE.md
-
-# Saved models
-src/05_modeling/linear_regression/*.pkl
-src/05_modeling/random_forest/*.pkl
-src/05_modeling/gradient_boosting/*.pkl
-
-# EDA outputs
-/src/04_eda/outputs/
+data/tabular/merged/*.csv

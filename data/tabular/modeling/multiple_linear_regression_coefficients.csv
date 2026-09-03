@@ -1,0 +1,56 @@
+target_variable,feature,coefficient
+pH,intercept,-9.45831687110515
+pH,latitude,0.5708750520865074
+pH,longitude,0.07347891011086093
+pH,distance_to_climate_station_km,0.05036999179394226
+pH,doy,-0.004503570211934461
+pH,gdd_40_86,-0.029626252277720373
+pH,high,-0.02263143032964658
+pH,low,0.06169962249706652
+pH,precip,-0.6166433188303694
+pH,snow,-0.3187548709261093
+pH,snowd,-0.0643514588194488
+"Temperature, water",intercept,-16.147100695968238
+"Temperature, water",latitude,-0.8223401530075748
+"Temperature, water",longitude,-0.49530154017191197
+"Temperature, water",distance_to_climate_station_km,-0.0030249057698243788
+"Temperature, water",doy,0.0039160500449571135
+"Temperature, water",gdd_40_86,0.19361005171564757
+"Temperature, water",high,0.07077602504592186
+"Temperature, water",low,0.210034021860685
+"Temperature, water",precip,-0.5500039812375723
+"Temperature, water",snow,-0.5910417097614983
+"Temperature, water",snowd,0.04618656808847854
+Dissolved oxygen (DO),intercept,27.071842742685817
+Dissolved oxygen (DO),latitude,0.8447667288094535
+Dissolved oxygen (DO),longitude,0.5122288291384739
+Dissolved oxygen (DO),distance_to_climate_station_km,0.003338072645715521
+Dissolved oxygen (DO),doy,-0.00612354722796062
+Dissolved oxygen (DO),gdd_40_86,0.09030829287932794
+Dissolved oxygen (DO),high,-0.04378535481386044
+Dissolved oxygen (DO),low,-0.0679601175986832
+Dissolved oxygen (DO),precip,-0.4790684036726255
+Dissolved oxygen (DO),snow,-0.481026690582317
+Dissolved oxygen (DO),snowd,-0.18740386164556527
+Orthophosphate,intercept,0.6216484525343023
+Orthophosphate,latitude,-0.05371405575923858
+Orthophosphate,longitude,-0.02033213364453015
+Orthophosphate,distance_to_climate_station_km,-0.0017946850686139072
+Orthophosphate,doy,0.00033154777697178017
+Orthophosphate,gdd_40_86,0.009015833392716664
+Orthophosphate,high,-0.0030538183150269293
+Orthophosphate,low,-0.0014574286083317836
+Orthophosphate,precip,0.20552328428283478
+Orthophosphate,snow,0.07330539772767217
+Orthophosphate,snowd,0.022118123600953873
+Chloride,intercept,441.3388921542776
+Chloride,latitude,-18.640738314201844
+Chloride,longitude,-4.063133729348342
+Chloride,distance_to_climate_station_km,-1.8317025254118486
+Chloride,doy,-0.0201725445085296
+Chloride,gdd_40_86,-2.959773192005021
+Chloride,high,1.1953779141884844
+Chloride,low,0.613661577159906
+Chloride,precip,-19.709344332003266
+Chloride,snow,0.48438667202648983
+Chloride,snowd,16.06213647744364
